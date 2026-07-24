@@ -1,0 +1,1933 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+	<meta name="viewport" content="width=device-width, user-scalable=yes, initial-scale=1, maximum-scale=1" />
+	<meta name="format-detection" content="telephone=no" />
+	<link rel="icon" type="image/ico" href="https://static.applyhome.co.kr/images/kabhom/common/favicon.ico" />
+	<link rel="apple-touch-icon" href="https://static.applyhome.co.kr/images/kabhom/common/phone.png"/>
+	<link rel="shortcut icon" href="https://static.applyhome.co.kr/images/kabhom/common/phone.png"/> 
+	
+	<link rel="stylesheet" type="text/css" href="/css/kabhom/main/leftSubMenu.css"/>
+	<link rel="stylesheet" type="text/css" href="/css/kabhom/main/hom.css"/>	
+	<link rel="stylesheet" type="text/css" href="/css/kabhom/main/scrap/virtual.css"/>
+	
+	
+	
+	<!-- 배너 슬라이드 추가링크 -->
+	<!-- <link rel="stylesheet" href="/css/kabhom/main/vendors/swiper.min.css">
+    <script src="/js/kabhom/plugin/swiper.min.js"></script> -->
+   
+	<title>청약홈 | 분양권 정보(전매제한 등) 안내</title>
+	
+	
+	<!-- 운영일 경우에만 -->
+	
+		<script async src="https://www.googletagmanager.com/gtag/js?id=UA-143621263-1"></script>
+	
+	
+	<script>
+	  window.dataLayer = window.dataLayer || [];
+	  function gtag(){dataLayer.push(arguments);}
+	  gtag('js', new Date());
+	
+	  gtag('config', 'UA-143621263-1');
+	</script>
+	
+	<script src="https://static.applyhome.co.kr/js/kabhom/plugin/jquery.3.1.1.min.js"></script>
+	<script src="https://static.applyhome.co.kr/js/kabhom/plugin/jquery-ui.min.js"></script>
+	<script src="/js/kabhom/main/site.js"></script>
+	
+	<!-- 성능제어 Netfunnel, 키보드보안 -->
+	<script src="/js/kabhom/com/com.js"></script>
+	
+	<!-- 성능제어 Netfunnel -->
+	<script src="https://static.applyhome.co.kr/netfunnel/netfunnel.js"></script>
+	<script src="https://static.applyhome.co.kr/netfunnel/netfunnel_skin.js"></script>
+	
+	<script>
+	document.domain = "applyhome.co.kr";
+	
+	window.onpageshow = function(event) {
+		if(event.persisted) {
+			
+			window.location.reload(true);
+		}
+	}
+	$(document).ready(function() {
+		if(gfn_isMobile()) {
+			$('#divTab').css("display","none");
+		}
+		
+		var gnbTree = $("#gnbTree > li > button");
+		$(gnbTree).on("click", function() {
+				 $(this).parents("li").siblings("li").children("ul").slideUp();
+				 $(this).parents("li").siblings("li").children("button").removeClass("on");
+				 $(this).siblings("ul").slideToggle();
+				 $(this).addClass("on");
+		 });
+	});
+	
+		
+		var strPopupYn = 'N';
+		
+		
+		if(window.name == "iframeDialog" && strPopupYn == 'Y')
+		{
+			parent.document.location.href = "/co/coz/selectComplexLoginView.do";
+		}
+
+		$(function(){
+			 
+			 /**
+			 * Description	: 상단 lnb_wrap setting
+			 */
+			$navi = $("#naviUl li").last();
+			var umid = $navi.data("umid");
+			if(umid != null) {
+				$navi.append($("#menu"+umid).next("ul").clone());
+				$navi.find('a').removeAttr('id');
+			}
+			
+			
+			var strMenuId = "menu" + $("#naviUl li").eq(1).data('mid');
+			$('#gnb #' + strMenuId).addClass('lnb_active');
+			
+			
+			
+			
+			if(gfn_getCookie("COA01M04_POPUP02") == "Y")
+			{
+			    $("#snb .info-wrap").addClass("hide");
+			}
+		});
+		
+	// Form input을 name=value 형식의 object로 변환	
+	$.fn.formToObject = function() {
+		var obj = null;
+		try {
+			if (this[0].tagName && this[0].tagName.toUpperCase() == "FORM") {
+				var arr = this.serializeArray();
+				if(arr) {
+					obj = {};
+					$.each(arr, function(){
+						obj[this.name] = this.value;
+					})
+				}
+			}
+		} catch (e) {
+			alert(e.message);
+		} finally {
+			return obj;
+		}
+	};
+	
+	function formToString(form) {
+		var formData = new FormData($form);
+		
+		var object = {};
+		formData.forEach(function(value, key){
+		    object[key] = value;
+		});
+		var json = JSON.stringify(object);
+	}
+	
+	function fn_openPopup(url, title) {
+//	    if(gfn_isMobile() == false) {
+	        window.open(url, title);
+//	    }
+	}
+	
+	//팝업창에서 excepion 화면 닫기
+	function fn_closeKabExceptionDialog(){
+    	$(".ui-dialog").remove();
+    }
+	
+	</script>
+</head>
+<body>
+<div id="wrap">
+	<a href="#gnb" class="skip-link">주메뉴 바로가기</a>
+	<a href="#subContent" class="skip-link">본문 바로가기</a>	
+	<div id="snb">
+		<div class="info-wrap">
+			<div>
+				<p><span>청약문의 1644-7445</span>(월~금 09:00~17:30)</p>
+				<button class="btn-close txt-indent color-wh">닫기</button>
+			</div>
+		</div>
+		<div id="header">
+			<div class="my-area">
+				<h1><a href="javascript:$net.href('/co/coa/selectMainView.do');" class="txt-indent">청약HOME</a></h1>
+				<div>
+					
+						<button type="button" class="btn-search txt-indent">검색</button>
+					
+					<button type="button" class="btn-menu txt-indent">메인 메뉴</button>
+				</div>
+			</div>
+			
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+	
+			<div class="search-area">
+				<div class="search-wrap">
+					<div class="search-btn"><button type="button" class="btn-close txt-indent">닫기</button></div>
+					<div class="search-box">
+						<form name="konanSearchform" id="konanSearchform" action="" method="POST"></form>
+						<input type="search" id="mainSchTxt" name="mainSchTxt" placeholder="검색어 입력" autocomplete="off" />
+						<!-- <button type="button" class="btn-search-delete txt-indent">삭제</button> -->
+						<button type="button" id="btnKonanSearch" class="btn-search txt-indent">검색</button>
+					</div>
+					<div class="search-autobox">
+						<div class="left-box">
+							<ul id="autolist"></ul>
+						</div>
+					</div>
+				</div>
+				
+				<div class="search-txt">찾으시는 메뉴명과 관심 지역명을 검색해보세요(순위확인서, 대구, 역삼 등)</div>
+			</div>
+			<div class="search-shadow"></div>
+			
+			<script>
+			$(function () {
+			    var searchTerm = "";
+			    $("#mainSchTxt").autocomplete({
+			        source: function (request, response) {
+			            searchTerm = request.term;
+			            $.ajax({
+			                url: "/co/coz/searchSuggestResult.do",
+			                data: { term: searchTerm },
+			                type: "GET",
+			                success: function(data) {
+			                    //console.log(data);
+			                    var jsonData = (typeof data === "string") ? JSON.parse(data) : data;
+			                    var html = "";
+			                    $.each(jsonData.suggestions.s || [], function(index, item) {
+			                        var itemTxt = item.keyword || '';
+			                        //자동완성 API 호출값에 URL이 포함되어지면 해당 ID값 호출 처리
+			                        //console.log(item.addtional || '');
+			                        var url = item.addtional[0] || '';			                        
+			                        var searchRegex = searchTerm.replace(/[.*+?^$()|[]\\]/g, '\\$&');
+			                        var highlighted = itemTxt.replace(new RegExp('(' + searchRegex + ')', 'gi'),'<span>$1</span>');
+			                        html += '<li data-url="'+url+'"><a href="'+url+'">';
+			                        if(!url || url.length === 0) {
+			                            html += highlighted;
+			                        }else {
+			                            html += highlighted + ' ≫';
+			                        }
+			                        html += '<div class="url-box"></div></a></li>';
+			                    });
+			                    $("#autolist").html(html).show();
+			                    //response(data);
+			                    response([]);
+			                }
+			            });
+			        },
+			        minLength: 1,
+			        delay: 300
+			    });
+			    $("#mainSchTxt").on("keydown", function(e) {
+			        if(e.keyCode === 13) {
+			            e.preventDefault();
+			            var chkArr = search.checkSearchCondition();
+			            var searchTxt = $("#mainSchTxt").val();
+			            var recordCountPerPage = 10;
+			            if(searchTxt.length > 1) {
+			                if ( chkArr ) {
+				                $('#konanSearchform').append( $('<input/>', {type:'hidden',id:'schTxt', name:'schTxt', value:searchTxt}) );
+				                $('#konanSearchform').append( $('<input/>', {type:'hidden',id:'recordCountPerPage', name:'recordCountPerPage', value:recordCountPerPage}) );
+					    		$net.submit("konanSearchform", "/co/coz/integratedSearchResultView.do");
+			                }
+			            }else {
+			                alert('검색어를 2글자 이상 입력해주세요.');
+			                return false;
+			            }
+			        }
+			    });
+			    $("#btnKonanSearch").on("click", function(e) {
+			        e.preventDefault();
+			        var chkArr = search.checkSearchCondition();
+			        var searchTxt = $("#mainSchTxt").val();
+			        var recordCountPerPage = 10;
+		            if(searchTxt.length > 1) {
+		                if ( chkArr ) {
+			                $('#konanSearchform').append( $('<input/>', {type:'hidden',id:'schTxt', name:'schTxt', value:searchTxt}) );
+			                $('#konanSearchform').append( $('<input/>', {type:'hidden',id:'recordCountPerPage', name:'recordCountPerPage', value:recordCountPerPage}) );
+				    		$net.submit("konanSearchform", "/co/coz/integratedSearchResultView.do");
+		                }
+		            }else {
+		                alert('검색어를 2글자 이상 입력해주세요.');
+		                return false;
+		            }
+			    });
+			    $(document).on("mouseenter", "#autolist li", function(e) {
+			        var $currentLi = $(this);
+			        $("#autolist li").not(this).find("div").empty().removeData("inited"); //다른 li의 div값을 비움
+			        
+			        if($currentLi.find("div").data("inited")) return; //이미 만들었다면 스킵하기
+			        
+			        var selectedTxt = $(this).children("a").first().text().replace("≫", "").trim();
+			        var url = $(this).data("url");
+			        if(url){
+			            var html = '<span>'+url+'</spna><span class="search-url">'+selectedTxt+'로 바로 이동</span>';
+				        $currentLi.find("div").html(html).data("inited", true);
+			        }
+			    });
+			    $(document).on("click", "#autolist li a", function(e) {
+			        e.preventDefault();
+			        var chkArr = search.checkSearchCondition();
+			        var selectedTxt = $(this).text().replace("≫", "").trim();
+			        var url = $(this).closest("li").data("url");
+			        var recordCountPerPage = 10;
+			        $("#autolist").val(selectedTxt);
+			        if(url){
+			            $net.href(""+url+"");
+			        }else{
+			            if ( chkArr ) {
+				            $('#konanSearchform').append( $('<input/>', {type:'hidden',id:'schTxt', name:'schTxt', value:selectedTxt}) );
+				            $('#konanSearchform').append( $('<input/>', {type:'hidden',id:'recordCountPerPage', name:'recordCountPerPage', value:recordCountPerPage}) );
+				    		$net.submit("konanSearchform", "/co/coz/integratedSearchResultView.do");
+			            }
+			        }
+			    });
+			    $(document).on("click", function(e) {
+			        if(!$(e.target).closest(".search-area").length) {
+			            $("#mainSchTxt").val("");
+			            $("#autolist").hide();
+			        }
+			    });
+			    $("#mainSchTxt").on("input", function(e) {
+					if(!e.target.value) {
+						$("#autolist").empty();
+					}
+				});
+			});
+			
+			var search = {
+			    checkSearchCondition : function() {
+					
+		    		var regApct = /[\%\&\<\>\"\']/gi;		
+		    		if(regApct.test($('#mainSchTxt').val()))
+		    		{
+		    			alert("검색어에 허용되지 않는 특수문자가 존재합니다.");	
+		    			$('#mainSchTxt').focus();
+		    			return false;
+		    		}
+		    		
+		    		var regApct = /(<([^>]+)>)/gi;		
+		    		if(regApct.test($('#mainSchTxt').val()))
+		    		{
+		    			alert("검색어에 허용되지 않는 문자스크립트가 존재합니다.");	
+		    			$('#mainSchTxt').val('');
+		    			$('#mainSchTxt').focus();
+		    			return false;
+		    		}
+		    		return true;
+		    	}
+			}
+			</script>
+		</div>
+		<div class="scrolling">
+			<nav id="gnb">
+				<div class="btn-box">
+					<div>
+					
+						
+							<a href="javascript:$net.href('/co/cob/selectSubscrptBnkbSbscrbDesc.do');" class="btn-login">마이페이지</a>
+						
+						
+					
+					</div>
+					<button type="button" class="btn-close txt-indent">닫기</button>
+				</div>
+				
+	<ul class="main">
+		<li>
+			<a href="#">청약신청</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do');" id="menu639">APT</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do');" id="menu667">특별공급</a></li>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do?se=01&ty=10');" id="menu100085">1순위/2순위</a></li>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do?se=04&ty=10');" id="menu100133">무순위</a></li>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do?se=11&ty=10');" id="menu100337">임의공급</a></li>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do?se=06&ty=20');" id="menu100164">불법행위재공급</a></li>
+							<li><a href="javascript:$net.href('/ap/apa/selectAptSpsplySubscrptReqstList.do');" id="menu668">청약신청 내역조회</a></li>
+							<li><a href="javascript:$net.href('/ap/apa/selectAptSpsplySubscrptCanclList.do');" id="menu669">청약취소</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apb/reqst/selectSubscrtReqstUOMainView.do');" id="menu640">오피스텔/생활숙박시설/도시형/민간임대</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ap/apb/reqst/selectSubscrtReqstUOMainView.do');" id="menu670">청약신청</a></li>
+							<li><a href="javascript:$net.href('/ap/apb/selectUrbtyOfctlSubscrptReqstList.do');" id="menu671">청약신청 내역조회</a></li>
+							<li><a href="javascript:$net.href('/ap/apb/selectUrbtyOfctlSubscrptCanclList.do');" id="menu672">청약취소</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apc/reqst/selectSubscrtReqstPRMainView.do');" id="menu641">공공지원민간임대</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ap/apc/reqst/selectSubscrtReqstPRMainView.do');" id="menu673">청약신청</a></li>
+							<li><a href="javascript:$net.href('/ap/apc/selectPrvateRentSubscrptReqstList.do');" id="menu674">청약신청 내역조회</a></li>
+							<li><a href="javascript:$net.href('/ap/apc/selectPrvateRentSubscrptCanclList.do');" id="menu675">청약취소</a></li>
+						</ul>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약당첨조회</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/wa/waa/selectAptPrzwinDescList.do');" id="menu646">APT</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/wa/wab/selectOfctlUrbtyPrzwinHouseList.do');" id="menu647">오피스텔/생활숙박시설/도시형/민간임대</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/wa/wac/selectPrvateRentPrzwinHouseList.do');" id="menu648">공공지원민간임대</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/wa/wad/selectMxtrHouseDrwtList.do');" id="menu649">주택조합 동·호수 추첨결과</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약자격확인</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ra/rab/selectHshldInfoProvdAgreRequestView.do');" id="menu100022">세대구성원 등록/조회</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ra/rab/selectHshldMbInfoProvdAgreView.do');" id="menu100127">세대구성원 동의</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/co/cob/selectSubscrptLmttCnList.do');" id="menu100128">청약제한사항확인</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apd/selectHousePosesnList.do');" id="menu100129">주택소유확인</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apd/selectSubscrptBnkbSbscrbDesc.do');" id="menu100276">청약통장</a>
+						<ul>
+							<li><a href="javascript:NetFunnel.href('/ap/apd/selectSubscrptBnkbSbscrbDesc.do', '');" id="menu100277">가입내역</a></li>
+							<li><a href="javascript:$net.href('/cu/cud/selectRankCnfrmnIssuView.do');" id="menu100278">순위확인서 발급</a></li>
+							<li><a href="javascript:$net.href('/cu/cue/selectRankCnfrmnIssuView.do');" id="menu100279">순위확인서 발급내역</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/co/coc/selectSubscrptQualfDiagMain.do');" id="menu100312">청약자격진단</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">공고단지 청약연습</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ap/apr/reqst/selectSubscrtReqstAptMainView.do');" id="menu100280">공고단지</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ap/apr/reqst/selectSubscrtReqstAptMainView.do');" id="menu100281">청약연습</a></li>
+							<li><a href="javascript:$net.href('/ra/raa/selectAptSpsplyPreparSubscrptReqstList.do');" id="menu100282">연습내역 조회</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apg/selectAddpntCalculatorView.do');" id="menu100125">청약가점계산기</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/app/reqst/selectSubscrtReqstAptMainView.do');" id="menu100126">청약가상체험</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약일정 및 통계</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ai/aib/selectSubscrptCalenderView.do');" id="menu651">청약캘린더(청약일정)</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/cu/cuc/selectSubscrptAllimiView.do');" id="menu652">청약알리미 신청</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ai/aia/selectAPTLttotPblancListView.do');" id="menu650">분양정보/경쟁률</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ai/aia/selectAPTLttotPblancListView.do');" id="menu686">APT</a></li>
+							<li><a href="javascript:$net.href('/ai/aia/selectOtherLttotPblancListView.do');" id="menu687">오피스텔/생활숙박시설/도시형/(공공지원)민간임대</a></li>
+							<li><a href="javascript:$net.href('/ai/aia/selectAPTRemndrLttotPblancListView.do');" id="menu818">APT 잔여세대</a></li>
+							<li><a href="javascript:$net.href('/ap/apk/selectAPTLttotPblancListView.do');" id="menu100383">민간사전청약</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ai/aie/selectSubscrptBnkbAllSbscrbStusView.do');" id="menu654">청약통장 통계</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ai/aie/selectSubscrptBnkbAllSbscrbStusView.do');" id="menu688">전체 현황</a></li>
+							<li><a href="javascript:$net.href('/ai/aie/selectSubscrptBnkbAcctoSbscrbStusView.do');" id="menu689">통장별 현황</a></li>
+							<li><a href="javascript:$net.href('/ai/aie/selectSubscrptBnkbSbscrbPdAcctoStusView.do');" id="menu690">가입기간별 현황</a></li>
+						</ul>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약제도안내</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ar/ara/selectSubscrptIntroHouseView.do');" id="menu655">APT</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroHouseView.do');" id="menu692">청약주택</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroBnkbView.do');" id="menu693">청약통장</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroQualfView.do');" id="menu694">청약자격</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroSpetialView.do');" id="menu695">특별공급</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroHowToReqstView.do');" id="menu696">청약신청방법</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroPreawnerSlctnView.do');" id="menu697">당첨자 선정</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroRemndrHshldView.do');" id="menu761">잔여세대</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ar/arb/selectPROUSubscriptionHouseInfoView.do');" id="menu656">오피스텔/생활숙박시설/도시형/(공공지원)민간임대</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ar/arb/selectPROUSubscriptionHouseInfoView.do');" id="menu698">청약주택</a></li>
+							<li><a href="javascript:$net.href('/ar/arb/selectPROUSubscriptionReqstMthInfoView.do');" id="menu699">청약신청방법</a></li>
+							<li><a href="javascript:$net.href('/ar/arb/selectPROUSubscrptIntroPreawnerSlctn.do');" id="menu700">당첨자 선정</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ar/arb/selectsubscriptionDepositInfoView.do');" id="menu657">주택청약 상품정보</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ai/aic/selectSpecltSubscrptRndAreaList.do');" id="menu100121">규제지역정보</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ar/ard/selectSubscriptVocabularyView.do');" id="menu658">주택청약 용어설명</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약소통방</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/cu/cua/selectNoticeListView.do');" id="menu660">공지사항</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/cu/cub/selectFAQList.do');" id="menu661">자주묻는질문</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/wa/waa/selectAptPrzwinCnfrmnList.do');" id="menu100156">APT당첨사실조회</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/cu/cui/selectAdvPrzwnerCanclView.do');" id="menu100382">사전청약 당첨취소자 조회</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/rs/rsa/selectResaleListView.do');" id="menu100174">분양권 정보(전매제한등)</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ai/aia/selectAPTMvnPrearngeHsHldcoList.do');" id="menu100267">입주(예정)정보</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+	</ul>
+
+			</nav>
+			<footer>
+				<div class="cs-box">
+					<strong class="txt-phone">청약문의</strong>
+					<div>
+						<strong class="num-phone">1644-칠사사오</strong>
+						<span>문의 시간  <strong>월~금 09:00 ~ 17:30</strong> </span>
+						<p>상담은 법적 효력 없는 참고용입니다.</p>
+					</div>
+				</div>
+				<div class="family-box">
+					<ul>
+						<li><a href="javascript:$net.href('/kabbnk/cn/cna/selectMainView.do');">대행은행</a></li>
+						<li><a href="javascript:$net.href('/kabbiz/cm/cma/selectMainView.do');">사업주체</a></li>
+					</ul>
+				</div>
+				<h2><a href="javascript:$net.href('/co/coa/selectMainView.do');" class="logo-bottom txt-indent">한국부동산원 청약 HOME</a></h2>
+				<div class="policy-box">
+					<ul>
+						<li><a href="javascript:$net.href('/co/coz/selectIndvdlinfoPolicyView.do');">개인정보처리방침</a></li>
+						<li><a href="javascript:$net.href('/co/coz/selectMobileUseInfoView.do');">모바일 사용에 대한 안내</a></li>
+						<li><a href="javascript:$net.href('/co/coz/selectMailColctDenialView.do');">이메일 추출방지정책 </a></li>
+						<li><a href="javascript:$net.href('/co/coz/selectSecurityProgrmView.do');">보안프로그램</a></li>
+						<li><a href="javascript:$net.href('/co/coz/selectCrtfctCopyView.do');">공동인증서 관리</a></li>
+						<li><a href="http://remote.kais.kr" target="_blank">원격연결</a></li>
+						<li><a href="#" class="menu-sitemap">사이트맵</a></li>
+					</ul>
+					<div class="info-sitemap">
+ 						<div class="site-wrap">
+							<a class="btn-close txt-indent color-wh">닫기</a>            	
+							
+	<ul class="main">
+		<li>
+			<a href="#">청약신청</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do');" class="title" id="menu639">APT</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do');" id="menu667">특별공급</a></li>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do?se=01&ty=10');" id="menu100085">1순위/2순위</a></li>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do?se=04&ty=10');" id="menu100133">무순위</a></li>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do?se=11&ty=10');" id="menu100337">임의공급</a></li>
+							<li><a href="javascript:$net.href('/ap/aph/reqst/selectSubscrtReqstAptMainView.do?se=06&ty=20');" id="menu100164">불법행위재공급</a></li>
+							<li><a href="javascript:$net.href('/ap/apa/selectAptSpsplySubscrptReqstList.do');" id="menu668">청약신청 내역조회</a></li>
+							<li><a href="javascript:$net.href('/ap/apa/selectAptSpsplySubscrptCanclList.do');" id="menu669">청약취소</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apb/reqst/selectSubscrtReqstUOMainView.do');" class="title" id="menu640">오피스텔/생활숙박시설/도시형/민간임대</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ap/apb/reqst/selectSubscrtReqstUOMainView.do');" id="menu670">청약신청</a></li>
+							<li><a href="javascript:$net.href('/ap/apb/selectUrbtyOfctlSubscrptReqstList.do');" id="menu671">청약신청 내역조회</a></li>
+							<li><a href="javascript:$net.href('/ap/apb/selectUrbtyOfctlSubscrptCanclList.do');" id="menu672">청약취소</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apc/reqst/selectSubscrtReqstPRMainView.do');" class="title" id="menu641">공공지원민간임대</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ap/apc/reqst/selectSubscrtReqstPRMainView.do');" id="menu673">청약신청</a></li>
+							<li><a href="javascript:$net.href('/ap/apc/selectPrvateRentSubscrptReqstList.do');" id="menu674">청약신청 내역조회</a></li>
+							<li><a href="javascript:$net.href('/ap/apc/selectPrvateRentSubscrptCanclList.do');" id="menu675">청약취소</a></li>
+						</ul>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약당첨조회</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/wa/waa/selectAptPrzwinDescList.do');" class="title" id="menu646">APT</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/wa/wab/selectOfctlUrbtyPrzwinHouseList.do');" class="title" id="menu647">오피스텔/생활숙박시설/도시형/민간임대</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/wa/wac/selectPrvateRentPrzwinHouseList.do');" class="title" id="menu648">공공지원민간임대</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/wa/wad/selectMxtrHouseDrwtList.do');" class="title" id="menu649">주택조합 동·호수 추첨결과</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약자격확인</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ra/rab/selectHshldInfoProvdAgreRequestView.do');" class="title" id="menu100022">세대구성원 등록/조회</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ra/rab/selectHshldMbInfoProvdAgreView.do');" class="title" id="menu100127">세대구성원 동의</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/co/cob/selectSubscrptLmttCnList.do');" class="title" id="menu100128">청약제한사항확인</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apd/selectHousePosesnList.do');" class="title" id="menu100129">주택소유확인</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apd/selectSubscrptBnkbSbscrbDesc.do');" class="title" id="menu100276">청약통장</a>
+						<ul>
+							<li><a href="javascript:NetFunnel.href('/ap/apd/selectSubscrptBnkbSbscrbDesc.do', '');" id="menu100277">가입내역</a></li>
+							<li><a href="javascript:$net.href('/cu/cud/selectRankCnfrmnIssuView.do');" id="menu100278">순위확인서 발급</a></li>
+							<li><a href="javascript:$net.href('/cu/cue/selectRankCnfrmnIssuView.do');" id="menu100279">순위확인서 발급내역</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/co/coc/selectSubscrptQualfDiagMain.do');" class="title" id="menu100312">청약자격진단</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">공고단지 청약연습</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ap/apr/reqst/selectSubscrtReqstAptMainView.do');" class="title" id="menu100280">공고단지</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ap/apr/reqst/selectSubscrtReqstAptMainView.do');" id="menu100281">청약연습</a></li>
+							<li><a href="javascript:$net.href('/ra/raa/selectAptSpsplyPreparSubscrptReqstList.do');" id="menu100282">연습내역 조회</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/apg/selectAddpntCalculatorView.do');" class="title" id="menu100125">청약가점계산기</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ap/app/reqst/selectSubscrtReqstAptMainView.do');" class="title" id="menu100126">청약가상체험</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약일정 및 통계</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ai/aib/selectSubscrptCalenderView.do');" class="title" id="menu651">청약캘린더(청약일정)</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/cu/cuc/selectSubscrptAllimiView.do');" class="title" id="menu652">청약알리미 신청</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ai/aia/selectAPTLttotPblancListView.do');" class="title" id="menu650">분양정보/경쟁률</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ai/aia/selectAPTLttotPblancListView.do');" id="menu686">APT</a></li>
+							<li><a href="javascript:$net.href('/ai/aia/selectOtherLttotPblancListView.do');" id="menu687">오피스텔/생활숙박시설/도시형/(공공지원)민간임대</a></li>
+							<li><a href="javascript:$net.href('/ai/aia/selectAPTRemndrLttotPblancListView.do');" id="menu818">APT 잔여세대</a></li>
+							<li><a href="javascript:$net.href('/ap/apk/selectAPTLttotPblancListView.do');" id="menu100383">민간사전청약</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ai/aie/selectSubscrptBnkbAllSbscrbStusView.do');" class="title" id="menu654">청약통장 통계</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ai/aie/selectSubscrptBnkbAllSbscrbStusView.do');" id="menu688">전체 현황</a></li>
+							<li><a href="javascript:$net.href('/ai/aie/selectSubscrptBnkbAcctoSbscrbStusView.do');" id="menu689">통장별 현황</a></li>
+							<li><a href="javascript:$net.href('/ai/aie/selectSubscrptBnkbSbscrbPdAcctoStusView.do');" id="menu690">가입기간별 현황</a></li>
+						</ul>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약제도안내</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/ar/ara/selectSubscrptIntroHouseView.do');" class="title" id="menu655">APT</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroHouseView.do');" id="menu692">청약주택</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroBnkbView.do');" id="menu693">청약통장</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroQualfView.do');" id="menu694">청약자격</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroSpetialView.do');" id="menu695">특별공급</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroHowToReqstView.do');" id="menu696">청약신청방법</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroPreawnerSlctnView.do');" id="menu697">당첨자 선정</a></li>
+							<li><a href="javascript:$net.href('/ar/ara/selectSubscrptIntroRemndrHshldView.do');" id="menu761">잔여세대</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ar/arb/selectPROUSubscriptionHouseInfoView.do');" class="title" id="menu656">오피스텔/생활숙박시설/도시형/(공공지원)민간임대</a>
+						<ul>
+							<li><a href="javascript:$net.href('/ar/arb/selectPROUSubscriptionHouseInfoView.do');" id="menu698">청약주택</a></li>
+							<li><a href="javascript:$net.href('/ar/arb/selectPROUSubscriptionReqstMthInfoView.do');" id="menu699">청약신청방법</a></li>
+							<li><a href="javascript:$net.href('/ar/arb/selectPROUSubscrptIntroPreawnerSlctn.do');" id="menu700">당첨자 선정</a></li>
+						</ul>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ar/arb/selectsubscriptionDepositInfoView.do');" class="title" id="menu657">주택청약 상품정보</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ai/aic/selectSpecltSubscrptRndAreaList.do');" class="title" id="menu100121">규제지역정보</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ar/ard/selectSubscriptVocabularyView.do');" class="title" id="menu658">주택청약 용어설명</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+		<li>
+			<a href="#">청약소통방</a>
+			<div class="sub-wrap">
+				<ul class="sub">
+					<li>
+						<a href="javascript:$net.href('/cu/cua/selectNoticeListView.do');" class="title" id="menu660">공지사항</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/cu/cub/selectFAQList.do');" class="title" id="menu661">자주묻는질문</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/wa/waa/selectAptPrzwinCnfrmnList.do');" class="title" id="menu100156">APT당첨사실조회</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/cu/cui/selectAdvPrzwnerCanclView.do');" class="title" id="menu100382">사전청약 당첨취소자 조회</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/rs/rsa/selectResaleListView.do');" class="title" id="menu100174">분양권 정보(전매제한등)</a>
+					</li>
+					<li>
+						<a href="javascript:$net.href('/ai/aia/selectAPTMvnPrearngeHsHldcoList.do');" class="title" id="menu100267">입주(예정)정보</a>
+					</li>
+				</ul>
+			</div>
+		</li>
+	</ul>
+
+						</div>
+					</div>
+				</div>
+				<p class="txt-address">(우)41068 대구광역시 동구 이노밸리로 291 (신서동)</p>
+				<p class="txt-copyright">COPYRIGHT ⓒ KOREA REAL ESTATE BOARD, ALL RIGHTS RESERVED.</p>
+			</footer>
+		</div>
+	</div>
+
+	<div id="content" class="sub_content">
+		<div class="sub_visu customer">
+			<div class="sub_visu_box">
+				<div class="sub_visu_txt">
+					<h5>
+				
+					
+						청약소통방
+					
+					
+				
+					</h5>
+					
+					
+					<div class="lnb_wrap">
+						<ul class="lnb_box" id="naviUl">
+							<li><a href="javascript:$net.href('/co/coa/selectMainView.do');"><i class="xi-home"></i><span class="blind">홈으로</span></a></li>
+							<li class="mo_none" data-mid="638"><i class="xi-angle-right-thin"></i> 청약소통방</li>
+					
+						
+						
+							<li class="" data-mid="100174" data-umid="638">
+								<i class="xi-angle-right-thin"></i> 분양권 정보(전매제한등)
+							</li>
+						
+						
+						
+						
+						</ul>
+					</div>
+				</div>
+			</div>
+		</div>
+		
+<!-- 배너 슬라이드 추가 스크립트 -->
+    <!-- <script>
+    var swiper = new Swiper('.swiper-container',{
+        autoplay: {
+            delay: 4000,
+            disableOnInteraction: false,
+        },
+        spaceBetween: 30,
+        effect: 'fade',
+        pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+        },
+        navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+        },
+    });
+  </script> -->
+<!-- 전매제한 관련 css -->
+<link rel="stylesheet" type="text/css" href="/css/kabhom/main/resalelimit.css"/>
+
+
+<div class="sub_content_box" id="subContent">
+    <h4 class="sub_tit">분양권 정보(전매제한 등)</h4>
+    
+    <div class="line_box">
+        <div class="line_content">
+            <ul class="inde_txt">
+                <li>
+                    <b>1. 분양권(주택) 거래시 유의사항</b>
+                    <br>부정청약 및 불법전매 적발시 기존 주택공급계약은 취소되며, 이에 따라 <b class="color_red">현 분양권(주택) 보유자(분양권 매수자)도 피해를 볼 수 있으므로 주의 필요</b>(주택법 제64조, 제65조)</li>
+                <li>
+                    <b>2. 부정청약 및 불법 전매시 제재사항</b>
+                    <br>불법 전매 신고제도, 부정청약·불법 전매에 대한 처벌 조항<sup>*</sup> 및 강력한 단속 실시 중
+                </li>
+                <li class="mt_10">* 불법전매 : 주택법 제101조제2호(3년 이하의 징역 또는 3천만원 이하의 벌금)</li>
+                <li>* 공급질서교란 : 주택법 제65조에 따라 적발일로부터 10년간 청약신청 제한, 제101조 제2호에 따라 3년 이하의 징역 또는 3천만원 이하의 벌금</li>
+                <li class="mt_10"><b>※ 전매제한 기간은 최초 입주자모집공고시 사업주체(시행사)가 등록한 정보를 기준으로 안내하고 있습니다. 향후 관련 법령 개정시 변경될 수 있사오니 참고용으로만 활용하시기 바랍니다.</b></li>
+
+            </ul>
+        </div>
+    </div>
+    
+    <!--검색시작-->
+    <div class="search_wrap">
+    	<form name="pbSearchForm" id="pbSearchForm">
+        <div class="search_box search_17">
+            <div>
+            	<label for="label2">지역 선택</label>
+            	<div class="select_st">
+					<label for="cate02" class="blind">시도</label>
+					<select name="suplyAreaCode" id="suplyAreaCode">
+						<option value="">시도 전체</option>
+						
+							
+								
+								
+									<option value="강원">강원</option>
+								
+							
+						
+							
+								
+								
+									<option value="경기">경기</option>
+								
+							
+						
+							
+								
+								
+									<option value="경남">경남</option>
+								
+							
+						
+							
+								
+								
+									<option value="경북">경북</option>
+								
+							
+						
+							
+								
+								
+									<option value="광주">광주</option>
+								
+							
+						
+							
+								
+								
+									<option value="대구">대구</option>
+								
+							
+						
+							
+								
+								
+									<option value="대전">대전</option>
+								
+							
+						
+							
+								
+								
+									<option value="부산">부산</option>
+								
+							
+						
+							
+								
+									<option value="서울" selected="selected">서울</option>
+								
+								
+							
+						
+							
+								
+								
+									<option value="세종">세종</option>
+								
+							
+						
+							
+								
+								
+									<option value="울산">울산</option>
+								
+							
+						
+							
+								
+								
+									<option value="인천">인천</option>
+								
+							
+						
+							
+								
+								
+									<option value="전남">전남</option>
+								
+							
+						
+							
+								
+								
+									<option value="전북">전북</option>
+								
+							
+						
+							
+								
+								
+									<option value="제주">제주</option>
+								
+							
+						
+							
+								
+								
+									<option value="충남">충남</option>
+								
+							
+						
+							
+								
+								
+									<option value="충북">충북</option>
+								
+							
+						
+					</select>
+				</div>
+				<div class="select_st">
+					<label for="siggList" class="blind">시군</label>
+					<select name="siggList" id="siggList">
+						<option value="">시군구 전체</option>
+					</select>
+				</div>
+				<label for="houseNm" class="blind">주택명(건설업체명)</label>
+				<input type="text" placeholder="주택명(건설업체명)" id="houseNm" name="houseNm" value="" maxlength="50" oninput="chkMaxLen(this)">
+                <button type="button" class="search_btn" id="btnSearch"><img src="https://static.applyhome.co.kr/images/kabhom/board/ic_search.png" alt="">검색</button>
+            </div>
+        </div>
+        </form>
+    </div>
+    <!--검색끝-->
+    
+	
+		
+    	
+    <!--검색결과 있는 경우 시작-->
+    <div>
+        <p class="total_txt mt_30">
+            <span>총게시물 : <b class="color_blue">168</b></span>
+            <span>페이지 : <b>1</b>/17</span>
+        </p>
+        <div class="inqryList">
+            <div class="inqryBox">
+            	
+                <div class="aptRow" data-pbno="2026000275" data-hmno="2026000275" data-honm="장위 푸르지오 마크원" data-cnt="1">
+                    <div class="aptName">
+                    	<span>1</span>
+                        <a href="#a">장위 푸르지오 마크원</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000275</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.06.19</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.07.08</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_001" class="blind">동 선택</label>
+                                                <select name="sel_001" id="sel_001" onchange="fn_dong_onchange(this,1,2026000275,2026000275)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_011" class="blind">호 선택</label>
+                                                <select name="sel_011" id="sel_011" onchange="fn_ho_onchange(1,2026000275,2026000275)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000241" data-hmno="2026000241" data-honm="드파인 아르티아" data-cnt="2">
+                    <div class="aptName">
+                    	<span>2</span>
+                        <a href="#a">드파인 아르티아</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000241</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.06.19</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.07.08</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_002" class="blind">동 선택</label>
+                                                <select name="sel_002" id="sel_002" onchange="fn_dong_onchange(this,2,2026000241,2026000241)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_012" class="blind">호 선택</label>
+                                                <select name="sel_012" id="sel_012" onchange="fn_ho_onchange(2,2026000241,2026000241)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000235" data-hmno="2026000235" data-honm="북서울자이 폴라리스(보류지)" data-cnt="3">
+                    <div class="aptName">
+                    	<span>3</span>
+                        <a href="#a">북서울자이 폴라리스(보류지)</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000235</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.06.12</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.06.30</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_003" class="blind">동 선택</label>
+                                                <select name="sel_003" id="sel_003" onchange="fn_dong_onchange(this,3,2026000235,2026000235)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_013" class="blind">호 선택</label>
+                                                <select name="sel_013" id="sel_013" onchange="fn_ho_onchange(3,2026000235,2026000235)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000120" data-hmno="2026000120" data-honm="써밋 더힐" data-cnt="4">
+                    <div class="aptName">
+                    	<span>4</span>
+                        <a href="#a">써밋 더힐</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000120</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.05.15</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.06.05</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_004" class="blind">동 선택</label>
+                                                <select name="sel_004" id="sel_004" onchange="fn_dong_onchange(this,4,2026000120,2026000120)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_014" class="blind">호 선택</label>
+                                                <select name="sel_014" id="sel_014" onchange="fn_ho_onchange(4,2026000120,2026000120)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000116" data-hmno="2026000116" data-honm="아크로 리버스카이" data-cnt="5">
+                    <div class="aptName">
+                    	<span>5</span>
+                        <a href="#a">아크로 리버스카이</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000116</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.05.13</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.06.05</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_005" class="blind">동 선택</label>
+                                                <select name="sel_005" id="sel_005" onchange="fn_dong_onchange(this,5,2026000116,2026000116)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_015" class="blind">호 선택</label>
+                                                <select name="sel_015" id="sel_015" onchange="fn_ho_onchange(5,2026000116,2026000116)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000156" data-hmno="2026000156" data-honm="더 리치먼드 미아" data-cnt="6">
+                    <div class="aptName">
+                    	<span>6</span>
+                        <a href="#a">더 리치먼드 미아</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000156</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.04.27</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.05.18</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_006" class="blind">동 선택</label>
+                                                <select name="sel_006" id="sel_006" onchange="fn_dong_onchange(this,6,2026000156,2026000156)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_016" class="blind">호 선택</label>
+                                                <select name="sel_016" id="sel_016" onchange="fn_ho_onchange(6,2026000156,2026000156)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000114" data-hmno="2026000114" data-honm="공덕역자이르네" data-cnt="7">
+                    <div class="aptName">
+                    	<span>7</span>
+                        <a href="#a">공덕역자이르네</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000114</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.04.17</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.05.08</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_007" class="blind">동 선택</label>
+                                                <select name="sel_007" id="sel_007" onchange="fn_dong_onchange(this,7,2026000114,2026000114)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_017" class="blind">호 선택</label>
+                                                <select name="sel_017" id="sel_017" onchange="fn_ho_onchange(7,2026000114,2026000114)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000094" data-hmno="2026000094" data-honm="라클라체자이드파인" data-cnt="8">
+                    <div class="aptName">
+                    	<span>8</span>
+                        <a href="#a">라클라체자이드파인</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000094</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.04.03</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.04.22</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_008" class="blind">동 선택</label>
+                                                <select name="sel_008" id="sel_008" onchange="fn_dong_onchange(this,8,2026000094,2026000094)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_018" class="blind">호 선택</label>
+                                                <select name="sel_018" id="sel_018" onchange="fn_ho_onchange(8,2026000094,2026000094)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000058" data-hmno="2026000058" data-honm="오티에르 반포" data-cnt="9">
+                    <div class="aptName">
+                    	<span>9</span>
+                        <a href="#a">오티에르 반포</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000058</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.03.31</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.04.21</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_009" class="blind">동 선택</label>
+                                                <select name="sel_009" id="sel_009" onchange="fn_dong_onchange(this,9,2026000058,2026000058)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_019" class="blind">호 선택</label>
+                                                <select name="sel_019" id="sel_019" onchange="fn_ho_onchange(9,2026000058,2026000058)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="aptRow" data-pbno="2026000048" data-hmno="2026000048" data-honm="이촌 르엘" data-cnt="10">
+                    <div class="aptName">
+                    	<span>10</span>
+                        <a href="#a">이촌 르엘</a>
+                    </div>
+                    <div class="inqryDetail">
+                        <table class="tbl_st">
+                            <caption class="blind">분양권 정보(전매제한 등) 조회결과 테이블입니다.</caption>
+                            <tbody>
+                                <tr>
+                                    <td>주택관리번호</td>
+                                    <td>2026000048</td>
+                                </tr>
+                                <tr>
+                                    <td>공고일</td>
+                                    <td>2026.03.30</td>
+                                </tr>
+                                <tr>
+                                    <td>당첨자 발표일</td>
+                                    <td>2026.04.20</td>
+                                </tr>
+                                <tr>
+                                    <td>전매제한</td>
+                                    <td>특별공급 : 3년(기간내 소유권이전등기시 해제) / 일반공급 : 3년(기간내 소유권이전등기시 해제)</td>
+                                </tr>
+                                <tr>
+                                    <td>동호수 선택</td>
+                                    <td>
+                                        <div class="dongho">
+                                            <p class="select_st">
+                                                <label for="sel_0010" class="blind">동 선택</label>
+                                                <select name="sel_0010" id="sel_0010" onchange="fn_dong_onchange(this,10,2026000048,2026000048)">
+                                                    <option value="0" selected disabled>동 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>동</span>
+                                        </div>
+                                        <div class="dongho">
+                                            <p class="select_st dongho">
+                                                <label for="sel_0110" class="blind">호 선택</label>
+                                                <select name="sel_0110" id="sel_0110" onchange="fn_ho_onchange(10,2026000048,2026000048)">
+                                                    <option value="0" selected disabled>호 선택</option>
+                                                </select>
+                                            </p>
+                                            <span>호</span>
+                                        </div>
+                                        <span>
+                                            <button type="button" class="btnBlue limitPopShow" id="" data-pop="dtlView">상세정보보기</button>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+            </div>
+        </div>        
+        <div class="paging_wrap">
+            <div class="pageview">
+                <div id="paging">
+					<a href="?pageIndex=1" onclick="fn_link_page(1);return false; " class="arrow"><span class="blind">처음으로</span></a><a href="?pageIndex=1" onclick="fn_link_page(1);return false; " class="arrow arw_prev"><span class="blind">이전 페이지로</span></a><div class="page_box"><a href="javasctipt:void(0)" onclick="return false; " class="active" title="현재페이지">1</a><a href="?pageIndex=2" onclick="fn_link_page(2);return false; ">2</a><a href="?pageIndex=3" onclick="fn_link_page(3);return false; ">3</a><a href="?pageIndex=4" onclick="fn_link_page(4);return false; ">4</a><a href="?pageIndex=5" onclick="fn_link_page(5);return false; ">5</a><a href="?pageIndex=6" onclick="fn_link_page(6);return false; ">6</a><a href="?pageIndex=7" onclick="fn_link_page(7);return false; ">7</a><a href="?pageIndex=8" onclick="fn_link_page(8);return false; ">8</a><a href="?pageIndex=9" onclick="fn_link_page(9);return false; ">9</a><a href="?pageIndex=10" onclick="fn_link_page(10);return false; ">10</a></div><a href="?pageIndex=11" onclick="fn_link_page(11);return false; " class="arrow"><span class="blind">다음 페이지로</span></a><a href="?pageIndex=17" onclick="fn_link_page(17);return false; " class="arrow arw_next"><span class="blind">맨끝으로</span></a>
+
+				</div>
+            </div>
+        </div>
+    </div>
+    <!--검색결과 있는 경우 끝-->
+		
+	
+    
+    
+</div>
+<div id="netFunnel" style="display:none;"></div>
+<script>
+
+$(document).ready(function() {
+	var oOptions = new Object();
+	oOptions.CallBack = "fn_netfunnelCallback";
+	NetFunnel.load("netFunnel", "/co/coz/netFunnelCallBack.do", oOptions, "ACT_30");
+});
+
+
+function fn_netfunnelCallback() {
+	return false;
+}
+
+	$(function(){
+	    var responseMessage = "";
+	    if (responseMessage != "") {
+	        alert(responseMessage);
+	        return false;
+	    }
+	});
+	
+    
+    var search = {
+    	checkSearchCondition : function() {
+    	    
+    	    
+    		if ( $('#houseNm').val().length > 50 ) {
+    			alert("주택명(건설업체명)은(는)  50자 이상 입력할수 없습니다.");	
+    			$('#houseNm').val('');
+    			return false;
+    		}
+    		
+    		
+    		var regApct = /[\%\&\<\>\"\']/gi;		
+    		if(regApct.test($('#houseNm').val()))
+    		{
+    			alert("주택명(건설업체명)에 허용되지 않는 특수문자가 존재합니다.");	
+    			$('#houseNm').focus();
+    			return false;
+    		}
+    		
+    	    
+    		var regApct = /(<([^>]+)>)/gi;		
+    		if(regApct.test($('#houseNm').val()))
+    		{
+    			alert("주택명(건설업체명)에 허용되지 않는 문자스크립트가 존재합니다."); 
+    			$('#houseNm').val('');
+    			$('#houseNm').focus();
+    			return false;
+    		}
+    		
+    	    var chkArr = [];
+    	    return chkArr;
+    	}
+    	, submit : function(chkArr, pageIndex) {
+    	    $('#pbSearchForm').append( $('<input/>', {type:'hidden', name:'pageIndex', value:pageIndex}) );
+    		$net.submit("pbSearchForm", "/rs/rsa/selectResaleListView.do");
+    	}
+    }
+    
+    
+    function fn_link_page(pageIndex) {
+    	$('#pbSearchForm').append( $('<input/>', {type:'hidden', name:'pageSelAt', value:'Y'}) );
+    	var chkArr = search.checkSearchCondition();
+    	if ( chkArr ) {
+    		search.submit(chkArr, pageIndex);
+    	}
+    }
+    
+    
+	$('#btnSearch').click(function() {
+	    /* if($('#suplyAreaCode option:selected').val() == 0){
+        	alert("시도를 선택해주세요.");
+        	$('#suplyAreaCode').focus();
+        	return false;
+        } */
+
+		var chkArr = search.checkSearchCondition();
+		if ( chkArr ) {
+			search.submit(chkArr, 1);
+		}
+	});
+	
+	var sucCode = "Y";
+    var strMsg = "";
+    
+	//아파트 내용보기
+    $('.aptName').on("click", function() {
+        sucCode = "Y";
+        var cnt = $(this).parent().data('cnt');
+        $.ajax({
+            url : '/rs/rsa/selectDongList.do',
+            type : 'post',
+            dataType : 'json',
+            data :
+                {
+                houseManageNo : $(this).parent().data('hmno'),
+                pblancNo : $(this).parent().data('pbno')
+                },
+            success : function(data){
+                console.log("[success]");
+                if(data.donglist.length > 0){
+                    $('#sel_00'+cnt).find('option').remove();
+                    $('#sel_01'+cnt).find('option').remove();
+                    $('#sel_00'+cnt).append("<option value='0' selected disabled>동 선택</option>");
+                    $('#sel_01'+cnt).append("<option value='0' selected disabled>호 선택</option>");
+                    for (var _idx = 0; _idx < data.donglist.length; _idx++){
+                        $('#sel_00'+cnt).append("<option value='"+data.donglist[_idx].DONG_SN+"'>"+data.donglist[_idx].DONG_NM+"</option>");
+                    }
+                }else{
+                    $('#sel_00'+cnt).find('option').remove();
+                    $('#sel_01'+cnt).find('option').remove();
+                    $('#sel_00'+cnt).append("<option value='0' selected disabled>동 선택</option>");
+                    $('#sel_01'+cnt).append("<option value='0' selected disabled>호 선택</option>");
+                }
+            },
+            error:function(error){
+                console.log(error.responseText);
+                alert("지금은 시스템 사정으로 요청하신 작업을 처리할 수 없습니다. \n잠시 후 다시 이용해주세요.");
+            }
+        });
+        
+        $(this).parent('.aptRow').siblings().find('.aptName').removeClass('height');
+        $(this).parent('.aptRow').siblings().find('.inqryDetail').hide();
+        $(this).parent('.aptRow').siblings().find('.aptName a').removeClass('on');
+        $(this).parent('.aptRow').siblings().find('.aptName span').removeClass('on');
+        $(this).next('.inqryDetail').toggle();
+        $(this).toggleClass('height');
+        $(this).children('a').toggleClass('on');
+        $(this).children('span').toggleClass('on');
+    });
+	
+    function fn_dong_onchange(obj,dongcnt,hmno,pbno) {
+        var dongsn = obj.value;
+        var cnt = dongcnt;
+        var houseManageNo = hmno;
+        var pblancNo = pbno;
+        sucCode = "Y";
+        $.ajax({
+            url : '/rs/rsa/selectHoList.do',
+            type : 'post',
+            dataType : 'json',
+            data :
+                {
+                houseManageNo : houseManageNo,
+                pblancNo : pblancNo,
+                dongsn : dongsn
+                },
+            success : function(data){
+                console.log("[success]");
+                if(data.holist.length > 0){
+                    $('#sel_01'+cnt).find('option').remove();
+                    $('#sel_01'+cnt).append("<option value='0' selected disabled>호 선택</option>");
+                    for (var _idx = 0; _idx < data.holist.length; _idx++){
+                        $('#sel_01'+cnt).append("<option value='"+data.holist[_idx].HO_SN+"'>"+data.holist[_idx].HO_CO+"</option>");
+                    }
+                }else{
+                    $('#sel_01'+cnt).find('option').remove();
+                    $('#sel_01'+cnt).append("<option value='0' selected disabled>호 선택</option>");
+                }
+            },
+            error:function(error){
+                console.log(error.responseText);
+                alert("지금은 시스템 사정으로 요청하신 작업을 처리할 수 없습니다. \n잠시 후 다시 이용해주세요.");
+            }
+        });
+    }
+    
+    function fn_ho_onchange(dongcnt,hmno,pbno) {
+        var cnt = dongcnt;
+        var houseManageNo = hmno;
+        var pblancNo = pbno;
+        var dongNo = $('#sel_00'+cnt+' option:selected').text();
+        var hoNo = $('#sel_01'+cnt+' option:selected').text();
+        $.ajax({
+            url : '/rs/rsa/selectResalePblancDetail.do',
+            type : 'post',
+            data :
+                {
+                houseManageNo : houseManageNo,
+                pblancNo : pblancNo,
+                dongNo : dongNo,
+                hoNo : hoNo
+                },
+            success : function(data){
+                console.log("[success]");
+                if($(data).find('#houseManageNo').text() == ""){
+                    sucCode = "N";
+                    strMsg = "[동:" + dongNo + ", 호:" + hoNo + "]";
+                }else{
+                    sucCode = "Y";
+                    strMsg = "";
+                }
+            },
+            error:function(error){
+                console.log(error.responseText);
+                alert("지금은 시스템 사정으로 요청하신 작업을 처리할 수 없습니다. \n잠시 후 다시 이용해주세요.");
+            }
+        });
+    }
+	
+	//상세정보보기 팝업 열고 닫기
+    $(".limitPopShow").on("click", function() {
+        if(sucCode == "N"){
+    		alert("해당 "+strMsg+"에 대한 분양권 세부 정보가 없습니다.\n단지의 전매제한 기간은 대표화면을 참고하시기 바랍니다.");
+    		return false;
+    	}
+        var dongcnt = $(this).parent().parent().parent().parent().parent().parent().parent().data('cnt');
+        if($('#sel_00'+dongcnt+' option:selected').val() == 0){
+        	alert("동수를 선택해주세요.");
+        	$('#sel_00'+dongcnt).focus();
+        	return false;
+        }
+        if($('#sel_01'+dongcnt+' option:selected').val() == 0){
+        	alert("호수를 선택해주세요.");
+        	$('#sel_01'+dongcnt).focus();
+        	return false;
+        }
+        if($('#pbDeFrm')){
+			$('#pbDeFrm').remove();
+		}
+		
+		var pbDeFrm = $('<form/>', {name:'pbDeFrm', id:'pbDeFrm'});
+		
+		$('.paging_wrap').after(pbDeFrm);
+		pbDeFrm.append( $('<input/>', {type:'hidden', name:'houseManageNo', id:'houseManageNo', value:$(this).parent().parent().parent().parent().parent().parent().parent().data('hmno')}));
+		pbDeFrm.append( $('<input/>', {type:'hidden', name:'pblancNo', id:'pblancNo', value:$(this).parent().parent().parent().parent().parent().parent().parent().data('pbno')}));
+		pbDeFrm.append( $('<input/>', {type:'hidden', name:'dongNo', id:'dongNo', value:$('#sel_00'+dongcnt+' option:selected').text()}));
+		pbDeFrm.append( $('<input/>', {type:'hidden', name:'hoNo', id:'hoNo', value:$('#sel_01'+dongcnt+' option:selected').text()}));
+		
+		var oPopupOptions = new Object();
+		
+		oPopupOptions.title = "전매제한 상세정보";
+		oPopupOptions.url = "/rs/rsa/selectResalePblancDetail.do";
+		oPopupOptions.height = "680";
+		oPopupOptions.resizable = false;
+		oPopupOptions.formId = "pbDeFrm";
+		oPopupOptions.clazz ='pop_w_900';
+		
+		$pop.dialog(oPopupOptions);
+		
+		$(".ui-dialog-title").attr("tabindex","0");
+    });
+    
+	function search_sigun_call() {
+	$("#suplyAreaCode").on("change", function() {
+		var sidoList = document.getElementById("suplyAreaCode");
+		var sidoCode = sidoList.options[sidoList.selectedIndex].value;
+		var re_siggList = "";
+		
+		$.ajax({
+            url : '/rs/rsa/selectSigunList.do',
+            type : 'post',
+            dataType : 'json',
+            data :
+                {
+                sidoCode : sidoCode
+                },
+            success : function(data){
+                console.log("[success]");
+                if(data.sigunlist.length > 0){
+                    $('#siggList').find('option').remove();
+                    $('#siggList').append("<option value=''>시군구 전체</option>");
+                    for (var _idx = 0; _idx < data.sigunlist.length; _idx++){
+                        if(data.sigunlist[_idx].CODE_NM == re_siggList){
+                            $('#siggList').append("<option value='"+data.sigunlist[_idx].CODE_NM+"' selected='selected'>"+data.sigunlist[_idx].CODE_NM+"</option>");
+                        }else{
+                            $('#siggList').append("<option value='"+data.sigunlist[_idx].CODE_NM+"'>"+data.sigunlist[_idx].CODE_NM+"</option>");
+                        }
+                    }
+                }else{
+                    $('#siggList').find('option').remove();
+                    $('#siggList').append("<option value=''>시군구 전체</option>");
+                }
+            },
+            error:function(error){
+                console.log(error.responseText);
+                alert("지금은 시스템 사정으로 요청하신 작업을 처리할 수 없습니다. \n잠시 후 다시 이용해주세요.");
+            }
+        });
+	}).trigger("change");
+	}
+    
+    $(document).ready(function() {
+        search_sigun_call();
+    });
+</script>
+
+
+
+	</div>
+	<ul class="navigation-wrap txt-indent"></ul>
+	<div class="shadow"></div>
+</div>
+<div id="divForPopup"></div>
+
+
+<div class="loding_wrap" id="commonProgressBar">
+	<div class="lod_wrap_box">
+		<div class="lod_box">
+			<i class="xi-spinner-2 xi-spin"></i>
+			<p>처리중입니다.</p>
+		</div>
+	</div>
+</div>
+
+	
+<script>
+	var gvPgmId = "RSA01M01";
+</script>
+<script src="/js/kabhom/com/hom.core.js"></script>
+<script src="/js/kabhom/util/hom.all.js"></script>
+<script src="/js/kabhom/main/leftMenucommon.js"></script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="ko" style="overflow: hidden;height:97%">
+<head>
+	<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+	<meta name="viewport" content="width=device-width, user-scalable=yes, initial-scale=1, maximum-scale=1" />
+	<meta name="format-detection" content="telephone=no" />
+	<link rel="icon" type="image/ico" href="/images/kabhom/common/favicon.ico" />
+
+	<link rel="stylesheet" type="text/css" href="/css/kabhom/main/hom.css"/>
+	<link rel="stylesheet" type="text/css" href="/css/kabhom/main/scrap/virtual.css"/>
+	
+	<title>청약홈</title>
+	<script src="/js/kabhom/plugin/jquery.3.1.1.min.js"></script>
+	<script src="/js/kabhom/plugin/jquery-ui.min.js"></script>
+	<script src="/js/kabhom/main/site.js"></script>
+	<script>
+		document.domain = "applyhome.co.kr";
+	</script>
+</head>
+<body class="popBody" style="overflow:auto">
+
+
+
+<div id="printArea"> 
+     <!--상세정보 팝업-->
+    <div class="limitPop dtlView">
+        <div class="limitConts">
+            <div class="sub_tit" tabindex="0"><span></span></div>
+            <div class="resalelimit mt_20">
+            	<!-- <p class="tbl_caption">분양금액(단위:만원)</p> -->
+                <table class="tbl_st tbl_row resalelimitM">
+                    <caption class="blind">분양권 정보(전매제한 등) 상세결과 테이블입니다.</caption>
+                    <colgroup>
+                        <col style="width: 20%">
+                        <col style="width: auto">
+                        <col style="width: 20%">
+                        <col style="width: auto">
+                    </colgroup>
+                    <tbody>
+                        <tr>
+                            <td scope="col">주택관리번호</td>
+                            <td id="houseManageNo"></td>
+                            <td scope="col">주택명</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td scope="col">주택형</td>
+                            <td></td>
+                            <td scope="col">공고일</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td scope="col">동수</td>
+                            <td></td>
+                            <td scope="col">호수</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td scope="col">당첨자 발표일</td>
+                            <td></td>
+                            <td scope="col">계약체결일</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td scope="col">추가입주 계약체결일 *</td>
+                            <td></td>
+                            <td scope="col">입주예정</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td scope="col">공급유형</td>
+                            <td></td>
+                            <td scope="col">지역</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                            <td scope="col">특이사항 **</td>
+                            <td>
+                                <!-- <button class="btn_normal uniqBtn" title="특이사항 세부정보">상세보기</button> -->
+                                
+                            </td>
+                            <td scope="col">전매제한</td>
+                            <td></td>
+                        </tr>
+                        <tr>
+                        	<td>분양금액(만원)***</td>
+                            <td></td>
+                            <td scope="col">모집공고문 다운로드</td>
+                            <td><button class="btn_normal" title="모집공고 다운로드" onclick="location.href='https://static.applyhome.co.kr/ai/aia/getAtchmnfl.do?houseManageNo=&pblancNo=&atchmnflSeqNo=&atchmnflSn='" class="radius_btn">다운로드</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="line_box">
+                <div class="line_content">
+                    <ul class="inde_txt">
+                        <li>
+                            * 예비입주자 중 추가입주자인 경우 표출 (그 외 해당없음)</li>
+                        <li>
+                            **규제지역(투기과열/청약과열), 과밀억제/성장관리권역, 택지유형(공공택지/민간택지), 수도권 대규모택지 여부, 이전기관/주한미군/혁신도시 등, 분양가상한제 적용
+                        </li>
+                        <li>*** 선택사양(옵션) 제외한 주택공급가격임</li>
+                    </ul>
+                </div>
+            </div>
+            <!-- <button type="button" class="closePop">
+                <i class="xi xi-close-thin"></i><span class="blind">팝업 닫기</span>
+            </button> -->
+        </div>
+    </div>
+</div>
+
+<!-- <div class="btn_box">
+	<button type="button" class="btn_cancel">닫기</button>
+	<button type="button" class="btn_submit" id="btnPrint">인쇄하기</button>
+</div> -->
+<script>
+$(function() {
+	
+	$(".closePop").click(function() {
+	    $pop.closeDialog();
+    });
+	
+	
+	$('#btnPrint').on('click', function(){
+		window.print();
+	});
+	
+	//특이사항 상세보기
+	/* $('.uniqBtn').click(function() {
+		$(this).parents().siblings('.resalelimit').find('.unique').hide()
+		$(this).next('.unique').toggle()
+	}); */
+});
+</script>
+
+
+<div id="divForPopup"></div>
+	
+<script>
+	var gvPgmId = "RSA01P02";
+</script>
+<script src="/js/kabhom/com/hom.core.js"></script>
+<script src="/js/kabhom/util/hom.all.js"></script>
+</body>
+</html>
