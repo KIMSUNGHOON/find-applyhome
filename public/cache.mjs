@@ -93,8 +93,12 @@ export async function runCacheFirstRefresh({
   const cachedSupply = state.meta?.supply ?? null;
   let topologyChanged = false;
   if (!state.meta || snapshot.refresh.topology || forceFull) {
-    state.meta = await fetchTopology();
-    state.meta.supply = cachedSupply;
+    const nextMeta = await fetchTopology();
+    if (state.aborted) {
+      return { status: "aborted", snapshot, jobs: [], updated: 0 };
+    }
+    nextMeta.supply = cachedSupply;
+    state.meta = nextMeta;
     pruneUnits(state.units, jobsFromMeta(state.meta));
     topologyChanged = true;
   }

@@ -137,6 +137,58 @@ test("cache-first orchestration은 저장 상태를 먼저 적용하고 새 topo
   ]);
 });
 
+test("topology 대기 중 중단하면 저장 상태를 그대로 보존한다", async () => {
+  const body = structuredClone(snapshot);
+  body.cache = "stale";
+  body.meta = {
+    total: 1,
+    dongs: [{ name: "101", hos: ["201"], grid: null }],
+    supply: [],
+  };
+  body.units = [{ dong: "101", ho: "201", status: "info", fields: {} }];
+  body.refresh.topology = true;
+  body.refresh.units = [{ dong: "101", ho: "202" }];
+
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+  let resolveTopology;
+  let markTopologyStarted;
+  const topologyResult = new Promise((resolve) => { resolveTopology = resolve; });
+  const topologyStarted = new Promise((resolve) => { markTopologyStarted = resolve; });
+  let cachedMeta;
+  let cachedUnits;
+  let replayed = 0;
+  const running = cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => {
+      markTopologyStarted();
+      return topologyResult;
+    },
+    fetchSupply: async () => assert.fail("aborted scan must not fetch supply"),
+    fetchUnit: async () => assert.fail("aborted scan must not fetch units"),
+    runJobs: async () => assert.fail("aborted scan must not run jobs"),
+    onStored: () => {
+      cachedMeta = state.meta;
+      cachedUnits = [...state.units.entries()];
+    },
+    onTopology: () => { replayed += 1; },
+  });
+
+  await topologyStarted;
+  state.aborted = true;
+  resolveTopology({
+    total: 1,
+    dongs: [{ name: "101", hos: ["202"], grid: null }],
+    supply: null,
+  });
+  const result = await running;
+
+  assert.equal(result.status, "aborted");
+  assert.equal(state.meta, cachedMeta);
+  assert.deepEqual([...state.units.entries()], cachedUnits);
+  assert.equal(replayed, 0);
+});
+
 test("cache 조회 실패는 현재 topology 전체를 직접 갱신한다", async () => {
   const state = { meta: null, units: new Map(), cache: null, aborted: false };
   const requested = [];
