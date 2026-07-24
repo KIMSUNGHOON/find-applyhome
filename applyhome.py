@@ -18,6 +18,7 @@ LIST_URL = f"{BASE}/rs/rsa/selectResaleListView.do"
 DONG_URL = f"{BASE}/rs/rsa/selectDongList.do"
 HO_URL = f"{BASE}/rs/rsa/selectHoList.do"
 DETAIL_URL = f"{BASE}/rs/rsa/selectResalePblancDetail.do"
+PBLANC_URL = f"{BASE}/ai/aia/selectAPTLttotPblancDetail.do"
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -275,3 +276,78 @@ def fetch_detail(hm: str, pb: str, dong_name: str, ho_no: str) -> UnitDetail:
         },
     )
     return parse_detail(html, dong_name, ho_no)
+
+
+# 공고 상세 페이지에는 주택형을 담은 표가 두 개 있다.
+#   '입주자모집공고 공급대상'          → 타입별 일반/특별/계  (이것을 쓴다)
+#   '입주자모집공고 특별공급 공급대상'  → 특별공급 세부 분해   (쓰지 않는다)
+# 부분 문자열로 찾으면 뒤엣것까지 걸리므로 캡션이 정확히 일치할 때만 받는다.
+SUPPLY_CAPTION = "입주자모집공고 공급대상"
+
+_SUPPLY_TYPE_RE = re.compile(r"^\d{2,4}\.\d{2,6}")
+
+
+@dataclass(frozen=True)
+class SupplyType:
+    house_type: str   # "084.8422A" 원본 주택형
+    area: str         # "116.9496" 주택공급면적(주거전용+주거공용)
+    general: int      # 일반공급 세대수
+    special: int      # 특별공급 세대수
+    total: int        # 계
+
+
+def parse_pblanc_supply(html: str) -> list[SupplyType]:
+    """공고 상세 HTML 에서 타입별 공급세대수를 뽑는다.
+
+    표를 못 찾거나 형식이 어긋나면 예외 대신 빈 리스트를 돌려준다.
+    공고는 부가 정보라 스캔을 막아서는 안 된다.
+    """
+    html = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+    html = re.sub(r"<(script|style).*?</\1>", "", html, flags=re.S)
+
+    for table in re.findall(r"<table[^>]*>(.*?)</table>", html, re.S):
+        caption = re.search(r"<caption[^>]*>(.*?)</caption>", table, re.S)
+        if caption is None or _text(caption.group(1)) != SUPPLY_CAPTION:
+            continue
+
+        types = []
+        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", table, re.S):
+            cells = [_text(c) for c in re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)]
+            # 첫 행에만 주택구분(민영/국민)이 rowspan 으로 붙고, 마지막엔 '계' 행이 온다.
+            # 그래서 위치가 아니라 주택형 패턴을 기준점으로 삼는다.
+            for index, cell in enumerate(cells):
+                if not _SUPPLY_TYPE_RE.match(cell) or index + 4 >= len(cells):
+                    continue
+                try:
+                    types.append(
+                        SupplyType(
+                            house_type=cell,
+                            area=cells[index + 1],
+                            general=int(cells[index + 2]),
+                            special=int(cells[index + 3]),
+                            total=int(cells[index + 4]),
+                        )
+                    )
+                except ValueError:
+                    pass  # 세대수 자리에 숫자가 아닌 값이 온 행은 버린다
+                break
+        return types
+    return []
+
+
+def fetch_pblanc_supply(hm: str, pb: str) -> list[SupplyType]:
+    """공고 상세를 조회해 타입별 공급세대수를 돌려준다.
+
+    APT 전용 엔드포인트다. 오피스텔·도시형은 주소가 달라 빈 리스트가 나온다.
+    """
+    query = urllib.parse.urlencode({"houseManageNo": hm, "pblancNo": pb})
+    request = urllib.request.Request(
+        f"{PBLANC_URL}?{query}",
+        headers={"User-Agent": USER_AGENT, "Referer": LIST_URL},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            html = response.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, OSError):
+        return []
+    return parse_pblanc_supply(html)
