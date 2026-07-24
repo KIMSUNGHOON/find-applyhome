@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import json
 import pathlib
+import secrets
+import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import applyhome
+import scanner
 
 STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
 
@@ -44,6 +47,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(STATIC_DIR / "index.html", "text/html; charset=utf-8")
         elif parsed.path == "/api/search":
             self._handle_search(query)
+        elif parsed.path == "/api/scan":
+            self._handle_scan(query)
         else:
             self._send_json({"message": "없는 경로입니다."}, status=404)
 
@@ -68,6 +73,40 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(
             {"complexes": [complex_to_dict(c) for c in complexes], "total": total}
         )
+
+    def _handle_scan(self, query: dict):
+        hm = self._one(query, "hm")
+        pb = self._one(query, "pb")
+        if not hm or not pb:
+            self._send_json({"message": "hm, pb 값이 필요합니다."}, status=400)
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        stop = threading.Event()
+        collected: list[dict] = []
+
+        def emit(name: str, payload: dict):
+            if name == "unit":
+                collected.append(payload)
+            if name == "done":
+                token = secrets.token_hex(8)
+                SCANS.clear()          # 마지막 스캔 하나만 남긴다
+                SCANS[token] = collected
+                payload = {**payload, "token": token}
+            try:
+                chunk = f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                self.wfile.write(chunk.encode("utf-8"))
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                stop.set()             # 브라우저가 떠났다
+
+        scanner.scan_complex(hm, pb, emit, stop=stop)
+        self.close_connection = True
 
     def _send_json(self, payload: dict, status: int = 200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
