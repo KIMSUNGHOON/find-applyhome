@@ -188,6 +188,7 @@
     <button id="scan-button" class="btn" disabled>Scan</button>
     <button id="stop-button" class="btn hide">Stop</button>
     <span id="progress" class="status"></span>
+    <span id="cache-status" class="caption"></span>
   </div>
 </section>
 
@@ -212,7 +213,7 @@
 
 <script type="module">
 import {
-  formatCheckedAt, pollSharedSnapshot, runCacheFirstRefresh, unitKey,
+  formatCheckedAt, mergeUnits, pollSharedSnapshot, runCacheFirstRefresh, unitKey,
 } from "/cache.mjs";
 
 const AREAS = ["강원","경기","경남","경북","광주","대구","대전","부산","서울","세종",
@@ -345,8 +346,40 @@ async function runPool(items, worker) {
 async function getJson(path, params) {
   const response = await fetch(path + "?" + new URLSearchParams(params));
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || `요청 실패 (${response.status})`);
-  return body;
+  if (!response.ok && response.status !== 202) {
+    throw new Error(body.message || `요청 실패 (${response.status})`);
+  }
+  return { ...body, http_status: response.status };
+}
+
+async function resolveRefreshingUnit(hm, pb, job, previousCheckedAt = 0) {
+  const found = await pollSharedSnapshot(
+    () => getJson("/api/cache", { hm, pb }),
+    (snapshot) => {
+      const unit = (snapshot.units || []).find((item) =>
+        item.dong === job.dong && item.ho === job.ho);
+      return Boolean(unit && (unit.checked_at || 0) > previousCheckedAt);
+    },
+  );
+  if (!found) return null;
+  const unit = found.units.find((item) => item.dong === job.dong && item.ho === job.ho);
+  mergeUnits(state.units, [unit]);
+  onUnit(unit);
+  return unit;
+}
+
+async function fetchResolvedUnit(hm, pb, job) {
+  const previous = state.units.get(unitKey(job.dong, job.ho));
+  let fresh;
+  try {
+    fresh = await getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho });
+  } catch (error) {
+    return previous || { dong: job.dong, ho: job.ho, status: "error", fields: {} };
+  }
+  if (fresh.refreshing || fresh.status === "refreshing") {
+    fresh = await resolveRefreshingUnit(hm, pb, job, previous?.checked_at || 0);
+  }
+  return fresh || previous || { dong: job.dong, ho: job.ho, status: "error", fields: {} };
 }
 
 async function fetchTopology(hm, pb) {
@@ -375,6 +408,7 @@ function summarize(elapsed = "0.0") {
 }
 
 function renderStoredSnapshot(snapshot) {
+  renderCacheStatus(snapshot);
   onMeta(state.meta);
   state.units.forEach(onUnit);
   onDone(summarize());
@@ -382,6 +416,19 @@ function renderStoredSnapshot(snapshot) {
   el("progress").textContent = checked
     ? `저장된 결과 ${state.units.size} / ${state.meta.total} · 마지막 확인 ${checked}`
     : `저장된 결과 ${state.units.size} / ${state.meta.total}`;
+}
+
+function renderCacheStatus(snapshot) {
+  const labels = {
+    disabled: "공유 캐시 없이 직접 조회",
+    miss: "저장된 결과 없음",
+    partial: "일부 데이터만 저장됨",
+    fresh: "저장된 결과",
+    stale: "저장된 결과 · 업데이트 필요",
+  };
+  const checked = formatCheckedAt(snapshot.checked_at);
+  el("cache-status").textContent =
+    `${labels[snapshot.cache] || ""}${checked ? ` · ${checked}` : ""}`;
 }
 
 async function scanComplex({ forceFull = false } = {}) {
@@ -394,6 +441,7 @@ async function scanComplex({ forceFull = false } = {}) {
   el("empty-list").innerHTML = "";
   el("detail").innerHTML = "";
   el("notice-band").classList.add("hide");
+  el("cache-status").textContent = "";
   el("scan-button").disabled = true;
   el("stop-button").classList.remove("hide");
 
@@ -404,15 +452,17 @@ async function scanComplex({ forceFull = false } = {}) {
     const result = await runCacheFirstRefresh({
       state,
       forceFull,
-      loadSnapshot: () => getJson("/api/cache", {
-        hm, pb, ...(forceFull ? { refresh: "full" } : {}),
-      }),
+      loadSnapshot: async () => {
+        const snapshot = await getJson("/api/cache", {
+          hm, pb, ...(forceFull ? { refresh: "full" } : {}),
+        });
+        renderCacheStatus(snapshot);
+        return snapshot;
+      },
       fetchTopology: () => fetchTopology(hm, pb),
       fetchSupply: () => getJson("/api/pblanc", { hm, pb })
         .then((body) => body.supply).catch(() => null),
-      fetchUnit: (job) =>
-        getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho })
-          .catch(() => ({ dong: job.dong, ho: job.ho, status: "error", fields: {} })),
+      fetchUnit: (job) => fetchResolvedUnit(hm, pb, job),
       runJobs: runPool,
       onStored: renderStoredSnapshot,
       onTopology: () => {
@@ -426,6 +476,7 @@ async function scanComplex({ forceFull = false } = {}) {
           `저장된 결과 ${state.units.size} / ${state.meta.total} · 업데이트 ${updated} / ${total}`;
       },
     });
+    renderCacheStatus(result.snapshot);
 
     if (result.status === "blocked") {
       el("progress").textContent =
@@ -721,6 +772,12 @@ function renderActions(summary) {
   button.addEventListener("click", downloadCsv);
   bar.append(button);
 
+  const refresh = document.createElement("button");
+  refresh.className = "btn";
+  refresh.textContent = "전체 새로고침";
+  refresh.addEventListener("click", () => scanComplex({ forceFull: true }));
+  bar.append(refresh);
+
   el("empty-list").prepend(bar);
   if (summary.error) renderRetry(summary, bar);
 }
@@ -734,14 +791,13 @@ function renderRetry(summary, bar) {
     button.textContent = "Retrying…";
     const failed = [...state.units.values()].filter((unit) => unit.status === "error");
     for (const unit of failed) {
-      const params = new URLSearchParams({
-        hm: state.complex.house_manage_no,
-        pb: state.complex.pblanc_no,
-        dong: unit.dong,
-        ho: unit.ho,
-      });
       try {
-        const fresh = await (await fetch("/api/unit?" + params)).json();
+        const fresh = await fetchResolvedUnit(
+          state.complex.house_manage_no,
+          state.complex.pblanc_no,
+          unit,
+        );
+        if (!fresh) continue;
         state.units.set(unitKey(fresh.dong, fresh.ho), fresh);
         const cell = document.getElementById(cellId(fresh.dong, fresh.ho));
         if (cell) {

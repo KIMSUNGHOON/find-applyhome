@@ -18,6 +18,28 @@ const snapshot = {
 
 const indexHtml = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 
+function functionSource(name) {
+  const marker = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`);
+  const match = marker.exec(indexHtml);
+  assert.ok(match, `${name} function must exist`);
+  const start = match.index;
+  const bodyStart = indexHtml.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < indexHtml.length; index += 1) {
+    if (indexHtml[index] === "{") depth += 1;
+    if (indexHtml[index] === "}") depth -= 1;
+    if (depth === 0) return indexHtml.slice(start, index + 1);
+  }
+  assert.fail(`${name} function must have a complete body`);
+}
+
+function loadInlineFunction(name, dependencies = {}) {
+  const names = Object.keys(dependencies);
+  const values = Object.values(dependencies);
+  const source = functionSource(name);
+  return Function(...names, `"use strict"; ${source}; return ${name};`)(...values);
+}
+
 test("snapshot을 기존 state 형태로 옮긴다", () => {
   const state = { meta: null, units: new Map() };
   hydrateState(state, snapshot);
@@ -66,6 +88,109 @@ test("공유 결과는 0.5, 1, 2초 순서로 polling한다", async () => {
   assert.deepEqual(waits, POLL_DELAYS_MS.slice(0, 2));
 });
 
+test("polling이 끝까지 최신값을 못 찾으면 null이다", async () => {
+  const waits = [];
+  const found = await pollSharedSnapshot(
+    async () => ({ checked_at: 1 }),
+    () => false,
+    async (delay) => waits.push(delay),
+  );
+  assert.equal(found, null);
+  assert.deepEqual(waits, POLL_DELAYS_MS);
+});
+
+test("새 snapshot 호실이 기존 Map 값을 교체한다", () => {
+  const units = new Map([[unitKey("101", "201"), { status: "empty" }]]);
+  mergeUnits(units, [{ dong: "101", ho: "201", status: "info", fields: {} }]);
+  assert.equal(units.get(unitKey("101", "201")).status, "info");
+});
+
+test("getJson은 202 본문과 HTTP 상태를 반환한다", async () => {
+  const fetch = async () => ({
+    ok: false,
+    status: 202,
+    json: async () => ({ status: "refreshing", refreshing: true }),
+  });
+  const getJson = loadInlineFunction("getJson", { fetch });
+  assert.deepEqual(await getJson("/api/unit", { dong: "101", ho: "201" }), {
+    status: "refreshing", refreshing: true, http_status: 202,
+  });
+});
+
+test("getJson은 202 외 non-OK 응답을 거부한다", async () => {
+  const fetch = async () => ({
+    ok: false,
+    status: 503,
+    json: async () => ({ message: "잠시 후 다시 시도하세요" }),
+  });
+  const getJson = loadInlineFunction("getJson", { fetch });
+  await assert.rejects(
+    getJson("/api/unit", { dong: "101", ho: "201" }),
+    /잠시 후 다시 시도하세요/,
+  );
+});
+
+test("refreshing 호실은 기존 checked_at보다 최신 공유 결과만 병합한다", async () => {
+  const units = new Map([[unitKey("101", "201"), {
+    dong: "101", ho: "201", status: "empty", fields: {}, checked_at: 10,
+  }]]);
+  const state = { units };
+  const rendered = [];
+  const snapshots = [
+    { units: [{ dong: "101", ho: "201", status: "info", fields: {}, checked_at: 10 }] },
+    { units: [{ dong: "101", ho: "201", status: "info", fields: {}, checked_at: 11 }] },
+  ];
+  const responses = structuredClone(snapshots);
+  const poll = async (load, accept) => {
+    for (const _body of snapshots) {
+      const loaded = await load();
+      if (accept(loaded)) return loaded;
+    }
+    return null;
+  };
+  const getJson = async (_path, _params) => responses.shift();
+  const resolveRefreshingUnit = loadInlineFunction("resolveRefreshingUnit", {
+    pollSharedSnapshot: poll, getJson, mergeUnits, state,
+    onUnit: (unit) => rendered.push(unit),
+  });
+
+  const found = await resolveRefreshingUnit("hm", "pb", { dong: "101", ho: "201" }, 10);
+  assert.equal(found.checked_at, 11);
+  assert.equal(state.units.get(unitKey("101", "201")).checked_at, 11);
+  assert.deepEqual(rendered, [found]);
+});
+
+test("공유 결과가 없으면 기존 호실은 보존하고 최초 호실만 화면 오류가 된다", async () => {
+  const previous = { dong: "101", ho: "201", status: "info", fields: {}, checked_at: 10 };
+  const state = { units: new Map([[unitKey("101", "201"), previous]]) };
+  const getJson = async () => ({ status: "refreshing", refreshing: true });
+  const resolveRefreshingUnit = async () => null;
+  const fetchResolvedUnit = loadInlineFunction("fetchResolvedUnit", {
+    state, unitKey, getJson, resolveRefreshingUnit,
+  });
+
+  assert.equal(await fetchResolvedUnit("hm", "pb", previous), previous);
+  state.units.clear();
+  assert.deepEqual(await fetchResolvedUnit("hm", "pb", previous), {
+    dong: "101", ho: "201", status: "error", fields: {},
+  });
+});
+
+test("cache 상태는 저장·직접·업데이트 필요를 사용자 문구로 표시한다", () => {
+  const node = { textContent: "" };
+  const renderCacheStatus = loadInlineFunction("renderCacheStatus", {
+    el: () => node,
+    formatCheckedAt: (value) => value ? "2026. 07. 24. 12:00" : "",
+  });
+
+  renderCacheStatus({ cache: "disabled", checked_at: null });
+  assert.equal(node.textContent, "공유 캐시 없이 직접 조회");
+  renderCacheStatus({ cache: "fresh", checked_at: 1 });
+  assert.equal(node.textContent, "저장된 결과 · 2026. 07. 24. 12:00");
+  renderCacheStatus({ cache: "stale", checked_at: 1 });
+  assert.equal(node.textContent, "저장된 결과 · 업데이트 필요 · 2026. 07. 24. 12:00");
+});
+
 test("checked_at이 없으면 표시 문자열이 비어 있다", () => {
   assert.equal(formatCheckedAt(null), "");
   assert.equal(unitKey("101", "201"), "101\u0000201");
@@ -79,6 +204,10 @@ test("페이지 scanComplex는 검증된 cache-first orchestration을 호출한�
     indexHtml.indexOf('el("scan-button").addEventListener'),
   );
   assert.match(scan, /await runCacheFirstRefresh\(\{/);
+  assert.match(scan, /fetchUnit:\s*\(job\)\s*=>\s*fetchResolvedUnit\(hm, pb, job\)/);
+  assert.match(indexHtml, /renderRetry[\s\S]*fetchResolvedUnit\(/);
+  assert.match(indexHtml, /scanComplex\(\{ forceFull: true \}\)/);
+  assert.match(indexHtml, /id="cache-status" class="caption"/);
 });
 
 test("cache-first orchestration은 저장 상태를 먼저 적용하고 새 topology로 정리한다", async () => {
