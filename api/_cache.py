@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
+import time
 import urllib.parse
+import urllib.request
 from dataclasses import dataclass
+from collections.abc import Callable, Sequence
 from typing import Mapping
 
 DAY_SECONDS = 24 * 60 * 60
@@ -19,6 +23,55 @@ UNIT_STATUSES = frozenset({"info", "empty", "error"})
 class Snapshot:
     payload: dict
     orphan_fields: tuple[str, ...] = ()
+
+
+class CacheUnavailable(RuntimeError):
+    pass
+
+
+def _rest_pipeline(url: str, token: str, commands: Sequence[Sequence[object]],
+                   timeout: float) -> list[object]:
+    body = json.dumps(commands, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        url.rstrip("/") + "/pipeline",
+        data=body,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        decoded = json.loads(response.read().decode("utf-8"))
+    if not isinstance(decoded, list) or len(decoded) != len(commands):
+        raise CacheUnavailable("Redis pipeline 응답 형식이 올바르지 않습니다.")
+    values = []
+    for item in decoded:
+        if not isinstance(item, dict) or "error" in item:
+            raise CacheUnavailable("Redis 명령 실행에 실패했습니다.")
+        values.append(item.get("result"))
+    return values
+
+
+class UpstashTransport:
+    def __init__(self, url: str, token: str,
+                 request: Callable = _rest_pipeline,
+                 monotonic: Callable[[], float] = time.monotonic):
+        self.url = url
+        self._token = token
+        self._request = request
+        self._monotonic = monotonic
+        self._disabled_until = 0.0
+
+    def pipeline(self, commands: Sequence[Sequence[object]]) -> list[object]:
+        now = self._monotonic()
+        if now < self._disabled_until:
+            raise CacheUnavailable("Redis 회로 차단기가 열려 있습니다.")
+        try:
+            return self._request(self.url, self._token, commands, REDIS_TIMEOUT)
+        except CacheUnavailable:
+            self._disabled_until = self._monotonic() + CIRCUIT_BREAKER_SECONDS
+            raise
+        except Exception as error:
+            self._disabled_until = self._monotonic() + CIRCUIT_BREAKER_SECONDS
+            raise CacheUnavailable("Redis에 연결할 수 없습니다.") from error
 
 
 def _part(value: object, limit: int = 64) -> str:
@@ -142,3 +195,76 @@ def assemble_snapshot(raw: Mapping[str, str], now: int) -> Snapshot:
         "refresh": refresh,
     }
     return Snapshot(payload, orphan_fields)
+
+
+class CacheStore:
+    def __init__(self, transport, now: Callable[[], int] = lambda: int(time.time())):
+        self.transport = transport
+        self.now = now
+
+    @classmethod
+    def from_env(cls, environ=None):
+        values = os.environ if environ is None else environ
+        url = values.get("UPSTASH_REDIS_REST_URL")
+        token = values.get("UPSTASH_REDIS_REST_TOKEN")
+        if not (url and token):
+            return None
+        return cls(UpstashTransport(url, token))
+
+    @staticmethod
+    def _hash(result) -> dict[str, str]:
+        if result is None:
+            return {}
+        if isinstance(result, dict):
+            return {str(key): str(value) for key, value in result.items()}
+        if not isinstance(result, list) or len(result) % 2:
+            raise CacheUnavailable("HGETALL 응답 형식이 올바르지 않습니다.")
+        return {str(result[index]): str(result[index + 1])
+                for index in range(0, len(result), 2)}
+
+    def read_snapshot(self, hm: str, pb: str, request_full: bool = False) -> dict:
+        key = complex_key(hm, pb)
+        try:
+            result = self.transport.pipeline([["HGETALL", key], ["EXPIRE", key, CACHE_TTL]])
+            snapshot = assemble_snapshot(self._hash(result[0]), self.now())
+            if snapshot.orphan_fields:
+                try:
+                    self.transport.pipeline([["HDEL", key, *snapshot.orphan_fields],
+                                             ["EXPIRE", key, CACHE_TTL]])
+                except CacheUnavailable:
+                    pass
+            return snapshot.payload
+        except (CacheUnavailable, ValueError):
+            return {"cache": "disabled", "complete": False, "checked_at": None,
+                    "meta": None, "units": [],
+                    "refresh": {"topology": True, "supply": True,
+                                "all_units": True, "units": []},
+                    "full_refresh": {"allowed": True, "retry_after": 0}}
+
+    def _write(self, hm: str, pb: str, field: str, value: dict) -> bool:
+        saved = dict(value)
+        saved["checked_at"] = int(saved.get("checked_at") or self.now())
+        key = complex_key(hm, pb)
+        try:
+            self.transport.pipeline([
+                ["HSET", key, field, json.dumps(saved, ensure_ascii=False,
+                                                  separators=(",", ":"))],
+                ["EXPIRE", key, CACHE_TTL],
+            ])
+            return True
+        except (CacheUnavailable, ValueError):
+            return False
+
+    def write_dongs(self, hm, pb, dongs):
+        return self._write(hm, pb, "_dongs", {"dongs": dongs})
+
+    def write_hos(self, hm, pb, sn, hos, grid):
+        return self._write(hm, pb, topology_field(sn), {"sn": sn, "hos": hos, "grid": grid})
+
+    def write_supply(self, hm, pb, supply):
+        return self._write(hm, pb, "_supply", {"supply": supply})
+
+    def write_unit(self, hm, pb, unit):
+        clean = {key: value for key, value in unit.items()
+                 if key in {"dong", "ho", "status", "fields"}}
+        return self._write(hm, pb, unit_field(clean["dong"], clean["ho"]), clean)

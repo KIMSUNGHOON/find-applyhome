@@ -122,3 +122,66 @@ class SnapshotPolicyTest(unittest.TestCase):
                                "fields": {}, "checked_at": NOW})
         result = _cache.assemble_snapshot(raw, NOW)
         self.assertEqual(result.orphan_fields, (orphan,))
+
+
+class FakeTransport:
+    def __init__(self, responses=None):
+        self.responses = list(responses or [])
+        self.calls = []
+
+    def pipeline(self, commands):
+        self.calls.append(commands)
+        if not self.responses:
+            return [None for command in commands]
+        result = self.responses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+class PersistenceTest(unittest.TestCase):
+    def test_hash를_읽고_TTL을_연장한다(self):
+        raw = complete_raw()
+        flat = [part for item in raw.items() for part in item]
+        transport = FakeTransport([[flat, 1]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        payload = store.read_snapshot("2025000439", "2025000439")
+        self.assertEqual(payload["cache"], "fresh")
+        self.assertEqual(transport.calls[0], [
+            ["HGETALL", "scan:v1:2025000439:2025000439"],
+            ["EXPIRE", "scan:v1:2025000439:2025000439", _cache.CACHE_TTL],
+        ])
+
+    def test_호실_하나만_HSET하고_TTL을_연장한다(self):
+        transport = FakeTransport([[1, 1]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        store.write_unit("1", "2", {"dong": "101", "ho": "201",
+                                      "status": "empty", "fields": {}})
+        commands = transport.calls[0]
+        self.assertEqual(commands[0][:3], ["HSET", "scan:v1:1:2", "u:101:201"])
+        saved = json.loads(commands[0][3])
+        self.assertEqual(saved["checked_at"], NOW)
+        self.assertEqual(commands[1], ["EXPIRE", "scan:v1:1:2", _cache.CACHE_TTL])
+
+    def test_환경변수_둘_중_하나라도_없으면_비활성화한다(self):
+        self.assertIsNone(_cache.CacheStore.from_env({}))
+        self.assertIsNone(_cache.CacheStore.from_env({"UPSTASH_REDIS_REST_URL": "https://x"}))
+
+    def test_전송_실패_뒤_60초_동안_회로를_차단한다(self):
+        calls = []
+        clock = iter([10.0, 10.0, 20.0, 71.0, 71.0])
+
+        def request(url, token, commands, timeout):
+            calls.append((url, token, commands, timeout))
+            if len(calls) == 1:
+                raise OSError("offline")
+            return ["OK"]
+
+        transport = _cache.UpstashTransport("https://redis.example", "secret",
+                                             request=request, monotonic=lambda: next(clock))
+        with self.assertRaises(_cache.CacheUnavailable):
+            transport.pipeline([["PING"]])
+        with self.assertRaises(_cache.CacheUnavailable):
+            transport.pipeline([["PING"]])
+        self.assertEqual(transport.pipeline([["PING"]]), ["OK"])
+        self.assertEqual(len(calls), 2)
