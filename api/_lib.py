@@ -16,7 +16,19 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import applyhome
+import _cache
 import grid
+
+CACHE = _cache.CacheStore.from_env()
+
+
+def _cache_call(method: str, *args):
+    if CACHE is None:
+        return None
+    try:
+        return getattr(CACHE, method)(*args)
+    except Exception:
+        return None
 
 
 def respond(request, status: int, payload: dict) -> None:
@@ -71,7 +83,9 @@ def dongs(query: dict) -> tuple[int, dict]:
         found = applyhome.list_dongs(hm, pb)
     except applyhome.ApplyhomeError as error:
         return 502, {"message": str(error)}
-    return 200, {"dongs": [{"sn": d.sn, "name": d.name} for d in found]}
+    payload = {"dongs": [{"sn": d.sn, "name": d.name} for d in found]}
+    _cache_call("write_dongs", hm, pb, payload["dongs"])
+    return 200, payload
 
 
 def hos(query: dict) -> tuple[int, dict]:
@@ -87,7 +101,9 @@ def hos(query: dict) -> tuple[int, dict]:
     except applyhome.ApplyhomeError as error:
         return 502, {"message": str(error)}
     numbers = [h.no for h in found]
-    return 200, {"hos": numbers, "grid": grid.build_grid(numbers)}
+    payload = {"hos": numbers, "grid": grid.build_grid(numbers)}
+    _cache_call("write_hos", hm, pb, sn, payload["hos"], payload["grid"])
+    return 200, payload
 
 
 def unit(query: dict) -> tuple[int, dict]:
@@ -96,13 +112,46 @@ def unit(query: dict) -> tuple[int, dict]:
     dong, ho = one(query, "dong"), one(query, "ho")
     if not (hm and pb and dong and ho):
         return 400, {"message": "hm, pb, dong, ho 값이 모두 필요합니다."}
+
+    lock = _cache_call("claim_unit", hm, pb, dong, ho)
+    if lock is not None and lock.state == "busy":
+        cached = _cache_call("read_unit", hm, pb, dong, ho)
+        if cached:
+            return 200, {**cached, "refreshing": True, "source": "cache"}
+        return 202, {
+            "dong": dong,
+            "ho": ho,
+            "status": "refreshing",
+            "fields": {},
+            "refreshing": True,
+        }
+
+    token = lock.token if lock is not None and lock.state == "acquired" else None
     try:
-        found = applyhome.fetch_detail(hm, pb, dong, ho)
-    except applyhome.ApplyhomeError as error:
-        return 200, {"dong": dong, "ho": ho, "status": "error", "fields": {},
-                     "message": str(error)}
-    return 200, {"dong": found.dong, "ho": found.ho,
-                 "status": found.status, "fields": found.fields}
+        try:
+            found = applyhome.fetch_detail(hm, pb, dong, ho)
+        except applyhome.ApplyhomeError as error:
+            saved = _cache_call("record_unit_error", hm, pb, dong, ho, str(error))
+            if saved:
+                return 200, {**saved, "refresh_error": True}
+            return 200, {
+                "dong": dong,
+                "ho": ho,
+                "status": "error",
+                "fields": {},
+                "message": str(error),
+            }
+        payload = {
+            "dong": found.dong,
+            "ho": found.ho,
+            "status": found.status,
+            "fields": found.fields,
+        }
+        _cache_call("write_unit", hm, pb, payload)
+        return 200, payload
+    finally:
+        if token:
+            _cache_call("release_unit", hm, pb, dong, ho, token)
 
 
 def pblanc(query: dict) -> tuple[int, dict]:
@@ -113,23 +162,51 @@ def pblanc(query: dict) -> tuple[int, dict]:
     try:
         types = applyhome.fetch_pblanc_supply(hm, pb)
     except Exception:
-        return 200, {"supply": None}
-    if not types:
-        return 200, {"supply": None}
-    return 200, {
-        "supply": [
-            {
-                "type": t.house_type,
-                "short": grid.short_type(t.house_type),
-                "net_area": grid.net_area(t.house_type),
-                "area": t.area,
-                "general": t.general,
-                "special": t.special,
-                "total": t.total,
-            }
-            for t in types
-        ]
-    }
+        types = []
+    supply = [
+        {
+            "type": item.house_type,
+            "short": grid.short_type(item.house_type),
+            "net_area": grid.net_area(item.house_type),
+            "area": item.area,
+            "general": item.general,
+            "special": item.special,
+            "total": item.total,
+        }
+        for item in types
+    ] or None
+    payload = {"supply": supply}
+    _cache_call("write_supply", hm, pb, supply)
+    return 200, payload
+
+
+def cache_snapshot(query: dict) -> tuple[int, dict]:
+    hm, pb = one(query, "hm"), one(query, "pb")
+    if not (hm and pb):
+        return 400, {"message": "hm, pb 값이 필요합니다."}
+    request_full = one(query, "refresh") == "full"
+    if CACHE is None:
+        return 200, {
+            "cache": "disabled",
+            "complete": False,
+            "checked_at": None,
+            "meta": None,
+            "units": [],
+            "refresh": {
+                "topology": True,
+                "supply": True,
+                "all_units": True,
+                "units": [],
+            },
+            "full_refresh": {"allowed": True, "retry_after": 0},
+        }
+    body = CACHE.read_snapshot(hm, pb, request_full=request_full)
+    if request_full or (body["cache"] == "stale" and body["refresh"]["all_units"]):
+        body["full_refresh"] = (
+            _cache_call("claim_full_refresh", hm, pb)
+            or {"allowed": True, "retry_after": 0}
+        )
+    return 200, body
 
 
 ROUTES = {
@@ -138,4 +215,5 @@ ROUTES = {
     "/api/hos": hos,
     "/api/unit": unit,
     "/api/pblanc": pblanc,
+    "/api/cache": cache_snapshot,
 }
