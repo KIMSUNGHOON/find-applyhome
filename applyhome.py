@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import time
 import urllib.error
@@ -44,6 +45,18 @@ class Complex:
     notice_date: str
     winner_date: str
     resale_limit: str
+
+
+@dataclass(frozen=True)
+class Dong:
+    sn: int      # DONG_SN — selectHoList.do 에 넘긴다
+    name: str    # DONG_NM — selectResalePblancDetail.do 에 넘긴다
+
+
+@dataclass(frozen=True)
+class Ho:
+    sn: int
+    no: str
 
 
 def _post(url: str, data: dict, ajax: bool = False) -> str:
@@ -158,3 +171,42 @@ def search_complexes(
         },
     )
     return parse_complex_list(html)
+
+
+def _load_json(raw: str, what: str) -> dict:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise BlockedError(
+            f"{what} 응답이 JSON이 아닙니다. 접속 대기열이거나 점검 중일 수 있습니다."
+        ) from error
+
+
+def parse_dong_list(raw: str) -> list[Dong]:
+    data = _load_json(raw, "동 목록")
+    return [
+        Dong(sn=int(item["DONG_SN"]), name=str(item["DONG_NM"]))
+        for item in data.get("donglist", [])
+    ]
+
+
+def parse_ho_list(raw: str) -> list[Ho]:
+    data = _load_json(raw, "호 목록")
+    return [
+        Ho(sn=int(item["HO_SN"]), no=str(item["HO_CO"]))
+        for item in data.get("holist", [])
+    ]
+
+
+def list_dongs(hm: str, pb: str) -> list[Dong]:
+    raw = _post(DONG_URL, {"houseManageNo": hm, "pblancNo": pb}, ajax=True)
+    return parse_dong_list(raw)
+
+
+def list_hos(hm: str, pb: str, dong_sn: int) -> list[Ho]:
+    raw = _post(
+        HO_URL,
+        {"houseManageNo": hm, "pblancNo": pb, "dongsn": str(dong_sn)},
+        ajax=True,
+    )
+    return parse_ho_list(raw)
