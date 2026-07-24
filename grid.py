@@ -1,0 +1,32 @@
+"""호수 문자열을 층·라인 격자로 배치한다.
+
+호수 마지막 두 자리가 라인, 그 앞이 층이다. "1105" → 11층 05라인.
+이 규칙에 맞지 않는 호수가 하나라도 섞이면 격자를 포기하고 None을 돌려준다.
+호출한 쪽은 None을 받으면 단순 나열로 표시한다.
+"""
+
+from __future__ import annotations
+
+
+def build_grid(ho_numbers: list[str]) -> dict | None:
+    if not ho_numbers:
+        return None
+
+    cells: dict[str, list] = {}
+    floors: set[int] = set()
+    lines: set[str] = set()
+
+    for ho in ho_numbers:
+        if len(ho) < 3 or not ho.isdigit():
+            return None
+        floor = int(ho[:-2])
+        line = ho[-2:]
+        cells[ho] = [floor, line]
+        floors.add(floor)
+        lines.add(line)
+
+    return {
+        "floors": sorted(floors, reverse=True),
+        "lines": sorted(lines),
+        "cells": cells,
+    }
