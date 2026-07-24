@@ -5,6 +5,7 @@ import os
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from collections.abc import Callable, Sequence
 from typing import Mapping
@@ -25,8 +26,20 @@ class Snapshot:
     orphan_fields: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class LockResult:
+    state: str
+    token: str | None = None
+
+
 class CacheUnavailable(RuntimeError):
     pass
+
+
+_RELEASE_SCRIPT = (
+    'if redis.call("get", KEYS[1]) == ARGV[1] then '
+    'return redis.call("del", KEYS[1]) else return 0 end'
+)
 
 
 def _rest_pipeline(url: str, token: str, commands: Sequence[Sequence[object]],
@@ -91,6 +104,14 @@ def topology_field(sn: object) -> str:
 
 def unit_field(dong: str, ho: str) -> str:
     return f"u:{_part(dong)}:{_part(ho)}"
+
+
+def _unit_lock_key(hm, pb, dong, ho):
+    return f"lock:{complex_key(hm, pb)}:{_part(dong)}:{_part(ho)}"
+
+
+def _full_refresh_key(hm, pb):
+    return f"cooldown:{complex_key(hm, pb)}:full"
 
 
 def _load_fields(raw: Mapping[str, str]) -> tuple[dict[str, dict], set[str]]:
@@ -270,3 +291,59 @@ class CacheStore:
         if clean.get("status") not in UNIT_STATUSES:
             return False
         return self._write(hm, pb, unit_field(clean["dong"], clean["ho"]), clean)
+
+    def claim_unit(self, hm, pb, dong, ho, token=None):
+        owner = token or uuid.uuid4().hex
+        try:
+            result = self.transport.pipeline([[
+                "SET", _unit_lock_key(hm, pb, dong, ho), owner,
+                "NX", "EX", UNIT_LOCK_TTL,
+            ]])[0]
+        except (CacheUnavailable, ValueError):
+            return LockResult("unavailable")
+        return LockResult("acquired", owner) if result == "OK" else LockResult("busy")
+
+    def release_unit(self, hm, pb, dong, ho, token):
+        try:
+            result = self.transport.pipeline([[
+                "EVAL", _RELEASE_SCRIPT, 1,
+                _unit_lock_key(hm, pb, dong, ho), token,
+            ]])[0]
+            return bool(result)
+        except (CacheUnavailable, ValueError):
+            return False
+
+    def claim_full_refresh(self, hm, pb):
+        key = _full_refresh_key(hm, pb)
+        token = uuid.uuid4().hex
+        try:
+            result, ttl = self.transport.pipeline([
+                ["SET", key, token, "NX", "EX", FULL_REFRESH_COOLDOWN],
+                ["TTL", key],
+            ])
+            return {"allowed": result == "OK",
+                    "retry_after": 0 if result == "OK" else max(int(ttl or 0), 0)}
+        except (CacheUnavailable, ValueError):
+            return {"allowed": True, "retry_after": 0}
+
+    def read_unit(self, hm, pb, dong, ho):
+        try:
+            result = self.transport.pipeline([[
+                "HGET", complex_key(hm, pb), unit_field(dong, ho),
+            ]])[0]
+            return json.loads(result) if result else None
+        except (CacheUnavailable, ValueError, json.JSONDecodeError):
+            return None
+
+    def record_unit_error(self, hm, pb, dong, ho, message):
+        prior = self.read_unit(hm, pb, dong, ho)
+        if prior and prior.get("status") in {"info", "empty"}:
+            saved = dict(prior)
+            saved["last_error_at"] = self.now()
+            saved["last_error"] = "최근 갱신에 실패했습니다."
+            self._write(hm, pb, unit_field(dong, ho), saved)
+            return saved
+        saved = {"dong": dong, "ho": ho, "status": "error", "fields": {}}
+        self._write(hm, pb, unit_field(dong, ho), saved)
+        saved["checked_at"] = self.now()
+        return saved

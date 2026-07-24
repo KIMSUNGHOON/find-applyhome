@@ -154,6 +154,54 @@ class FakeResponse:
         return self.payload
 
 
+class CoordinationTest(unittest.TestCase):
+    def test_호실_잠금을_30초로_획득한다(self):
+        transport = FakeTransport([["OK"]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        result = store.claim_unit("1", "2", "101", "201", token="owner")
+        self.assertEqual(result.state, "acquired")
+        self.assertEqual(result.token, "owner")
+        self.assertEqual(transport.calls[0][0][-4:], ["owner", "NX", "EX", 30])
+
+    def test_이미_잠긴_호실은_busy다(self):
+        store = _cache.CacheStore(FakeTransport([[None]]), now=lambda: NOW)
+        result = store.claim_unit("1", "2", "101", "201", token="other")
+        self.assertEqual(result.state, "busy")
+
+    def test_소유자_토큰을_비교해_잠금을_해제한다(self):
+        transport = FakeTransport([[1]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        self.assertTrue(store.release_unit("1", "2", "101", "201", "owner"))
+        command = transport.calls[0][0]
+        self.assertEqual(command[0], "EVAL")
+        self.assertEqual(command[-1], "owner")
+
+    def test_전체_새로고침_cooldown의_남은_초를_돌려준다(self):
+        transport = FakeTransport([[None, 412]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        self.assertEqual(store.claim_full_refresh("1", "2"),
+                         {"allowed": False, "retry_after": 412})
+
+    def test_정상값_재확인_실패는_상태를_보존한다(self):
+        old = {"dong": "101", "ho": "201", "status": "info",
+               "fields": {"주택형": "084.8422A"}, "checked_at": NOW - WEEK}
+        transport = FakeTransport([[
+            json.dumps(old, ensure_ascii=False)
+        ], [1, 1]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃")
+        self.assertEqual(saved["status"], "info")
+        self.assertEqual(saved["last_error_at"], NOW)
+        self.assertNotIn("타임아웃", json.dumps(transport.calls))
+
+    def test_첫_조회_실패는_error로_저장한다(self):
+        transport = FakeTransport([[None], [1, 1]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃")
+        self.assertEqual(saved["status"], "error")
+        self.assertEqual(saved["fields"], {})
+
+
 class PersistenceTest(unittest.TestCase):
     def test_result_없는_REST_응답은_회로를_차단한다(self):
         clock = iter([10.0, 10.0, 20.0])
