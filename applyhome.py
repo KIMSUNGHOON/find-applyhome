@@ -210,3 +210,68 @@ def list_hos(hm: str, pb: str, dong_sn: int) -> list[Ho]:
         ajax=True,
     )
     return parse_ho_list(raw)
+
+
+DETAIL_LABELS = (
+    "주택관리번호",
+    "주택명",
+    "주택형",
+    "공고일",
+    "동수",
+    "호수",
+    "당첨자 발표일",
+    "계약체결일",
+    "추가입주 계약체결일",
+    "입주예정",
+    "공급유형",
+    "지역",
+    "특이사항",
+    "전매제한",
+    "분양금액(만원)",
+)
+_DETAIL_LABEL_SET = frozenset(DETAIL_LABELS)
+
+_HOUSE_NO_RE = re.compile(r'id="houseManageNo"[^>]*>(.*?)<', re.S)
+
+
+@dataclass(frozen=True)
+class UnitDetail:
+    dong: str
+    ho: str
+    status: str          # "info" | "empty" | "error"
+    fields: dict[str, str]
+
+
+def parse_detail(html: str, dong: str, ho: str) -> UnitDetail:
+    """상세 팝업 HTML을 판정한다.
+
+    청약홈 스크립트는 id="houseManageNo" 의 텍스트가 비면
+    "분양권 세부 정보가 없습니다" 경고창을 띄운다. 같은 조건을 그대로 쓴다.
+    """
+    html = re.sub(r"<!--.*?-->", "", html, flags=re.S)
+
+    match = _HOUSE_NO_RE.search(html)
+    if match is None or not match.group(1).strip():
+        return UnitDetail(dong=dong, ho=ho, status="empty", fields={})
+
+    cells = [c for c in _cells(html) if c]
+    return UnitDetail(
+        dong=dong,
+        ho=ho,
+        status="info",
+        fields=_label_pairs(cells, _DETAIL_LABEL_SET),
+    )
+
+
+def fetch_detail(hm: str, pb: str, dong_name: str, ho_no: str) -> UnitDetail:
+    """한 세대의 분양권 정보를 조회한다. dong_name 은 DONG_NM 이다."""
+    html = _post(
+        DETAIL_URL,
+        {
+            "houseManageNo": hm,
+            "pblancNo": pb,
+            "dongNo": dong_name,
+            "hoNo": ho_no,
+        },
+    )
+    return parse_detail(html, dong_name, ho_no)
