@@ -36,11 +36,11 @@ test("footer는 출처 저장소 개발자를 안전한 외부 링크로 표시�
 
   for (const [href, label] of expected) {
     const escaped = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const anchor = footer.match(new RegExp(`<a[^>]+href="${escaped}"[^>]*>`));
+    const anchor = footer.match(new RegExp(`<a[^>]+href="${escaped}"[^>]*>([^<]*)</a>`));
     assert.ok(anchor, `missing footer link: ${href}`);
     assert.match(anchor[0], /target="_blank"/);
     assert.match(anchor[0], /rel="noopener noreferrer"/);
-    assert.match(footer, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.equal(anchor[1], label);
   }
 
   assert.match(footer, /공개 데이터를 조회합니다\. 참고용으로만 활용하세요\./);
