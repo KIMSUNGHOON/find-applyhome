@@ -212,8 +212,7 @@
 
 <script type="module">
 import {
-  formatCheckedAt, hydrateState, mergeUnits, pollSharedSnapshot,
-  selectUnitJobs, unitKey,
+  formatCheckedAt, pollSharedSnapshot, runCacheFirstRefresh, unitKey,
 } from "/cache.mjs";
 
 const AREAS = ["강원","경기","경남","경북","광주","대구","대전","부산","서울","세종",
@@ -367,14 +366,6 @@ async function fetchTopology(hm, pb) {
   };
 }
 
-function jobsFromMeta(meta) {
-  const jobs = [];
-  for (const dong of meta?.dongs || []) {
-    for (const ho of dong.hos) jobs.push({ dong: dong.name, ho });
-  }
-  return jobs;
-}
-
 function summarize(elapsed = "0.0") {
   const tally = { info: 0, empty: 0, error: 0 };
   state.units.forEach((unit) => {
@@ -384,8 +375,6 @@ function summarize(elapsed = "0.0") {
 }
 
 function renderStoredSnapshot(snapshot) {
-  if (!snapshot.meta) return;
-  hydrateState(state, snapshot);
   onMeta(state.meta);
   state.units.forEach(onUnit);
   onDone(summarize());
@@ -411,75 +400,45 @@ async function scanComplex({ forceFull = false } = {}) {
   const hm = state.complex.house_manage_no;
   const pb = state.complex.pblanc_no;
   const started = Date.now();
-  let snapshot;
   try {
-    snapshot = await getJson("/api/cache", {
-      hm, pb, ...(forceFull ? { refresh: "full" } : {}),
+    const result = await runCacheFirstRefresh({
+      state,
+      forceFull,
+      loadSnapshot: () => getJson("/api/cache", {
+        hm, pb, ...(forceFull ? { refresh: "full" } : {}),
+      }),
+      fetchTopology: () => fetchTopology(hm, pb),
+      fetchSupply: () => getJson("/api/pblanc", { hm, pb })
+        .then((body) => body.supply).catch(() => null),
+      fetchUnit: (job) =>
+        getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho })
+          .catch(() => ({ dong: job.dong, ho: job.ho, status: "error", fields: {} })),
+      runJobs: runPool,
+      onStored: renderStoredSnapshot,
+      onTopology: () => {
+        el("grids").innerHTML = "";
+        onMeta(state.meta);
+        state.units.forEach(onUnit);
+      },
+      onUnit,
+      onProgress: ({ updated, total }) => {
+        el("progress").textContent =
+          `저장된 결과 ${state.units.size} / ${state.meta.total} · 업데이트 ${updated} / ${total}`;
+      },
     });
-  } catch (error) {
-    snapshot = {
-      cache: "disabled", complete: false, checked_at: null, meta: null, units: [],
-      refresh: { topology: true, supply: true, all_units: true, units: [] },
-      full_refresh: { allowed: true, retry_after: 0 },
-    };
-  }
 
-  renderStoredSnapshot(snapshot);
-  if (snapshot.full_refresh && !snapshot.full_refresh.allowed) {
-    el("progress").textContent =
-      `다른 방문자가 업데이트 중입니다 · ${snapshot.full_refresh.retry_after}초 뒤 전체 새로고침 가능`;
-    finishScan();
-    return;
-  }
-  if (snapshot.cache === "fresh" && !forceFull) {
-    finishScan();
-    return;
-  }
-
-  try {
-    const cachedSupply = state.meta?.supply ?? null;
-    let topologyChanged = false;
-    if (!state.meta || snapshot.refresh.topology || forceFull) {
-      state.meta = await fetchTopology(hm, pb);
-      state.meta.supply = cachedSupply;
-      topologyChanged = true;
-    }
-    if (state.aborted) {
-      el("progress").textContent = `중단됨 · ${state.units.size}세대까지 저장`;
-      return;
-    }
-    if (!state.meta.total) {
-      el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
-      return;
-    }
-    if (snapshot.refresh.supply || forceFull || state.meta.supply === null) {
-      state.meta.supply = await getJson("/api/pblanc", { hm, pb })
-        .then((body) => body.supply).catch(() => null);
-    }
-    if (topologyChanged) {
-      el("grids").innerHTML = "";
-      onMeta(state.meta);
-      state.units.forEach(onUnit);
-    }
-
-    const allJobs = jobsFromMeta(state.meta);
-    const jobs = forceFull ? allJobs : selectUnitJobs(snapshot, allJobs);
-    let updated = 0;
-    await runPool(jobs, async (job) => {
-      const unit = await getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho })
-        .catch(() => ({ dong: job.dong, ho: job.ho, status: "error", fields: {} }));
-      if (unit.status !== "refreshing") {
-        state.units.set(unitKey(unit.dong, unit.ho), unit);
-        onUnit(unit);
-      }
-      updated += 1;
+    if (result.status === "blocked") {
       el("progress").textContent =
-        `저장된 결과 ${state.units.size} / ${state.meta.total} · 업데이트 ${updated} / ${jobs.length}`;
-      return unit;
-    });
-
-    if (state.aborted) {
+        `다른 방문자가 업데이트 중입니다 · ${result.snapshot.full_refresh.retry_after}초 뒤 전체 새로고침 가능`;
+      return;
+    }
+    if (result.status === "fresh") return;
+    if (result.status === "aborted") {
       el("progress").textContent = `중단됨 · ${state.units.size}세대까지 저장`;
+      return;
+    }
+    if (result.status === "empty") {
+      el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
       return;
     }
     const summary = summarize(((Date.now() - started) / 1000).toFixed(1));

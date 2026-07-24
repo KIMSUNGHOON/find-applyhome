@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import * as cacheModule from "../public/cache.mjs";
 import {
   POLL_DELAYS_MS, formatCheckedAt, hydrateState, mergeUnits,
   pollSharedSnapshot, selectUnitJobs, unitKey,
@@ -70,15 +71,128 @@ test("checked_at이 없으면 표시 문자열이 비어 있다", () => {
   assert.equal(unitKey("101", "201"), "101\u0000201");
 });
 
-test("페이지는 저장 결과를 먼저 그리고 서버 지정 호실만 갱신한다", () => {
+test("페이지 scanComplex는 검증된 cache-first orchestration을 호출한다", () => {
   assert.match(indexHtml, /<script type="module">/);
-  const cacheRequest = indexHtml.indexOf('getJson("/api/cache"');
-  const storedRender = indexHtml.indexOf("renderStoredSnapshot(snapshot)", cacheRequest);
-  const topologyRefresh = indexHtml.indexOf("fetchTopology(hm, pb)", storedRender);
-  const unitSelection = indexHtml.indexOf("selectUnitJobs(snapshot, allJobs)", topologyRefresh);
-  assert.ok(cacheRequest >= 0, "cache snapshot request is wired");
-  assert.ok(storedRender > cacheRequest, "stored snapshot renders after loading");
-  assert.ok(topologyRefresh > storedRender, "network refresh starts after stored render");
-  assert.ok(unitSelection > topologyRefresh, "server-directed unit selection is used");
-  assert.match(indexHtml, /state\.units\.set\(unitKey\(unit\.dong, unit\.ho\), unit\)/);
+  assert.match(indexHtml, /runCacheFirstRefresh,/);
+  const scan = indexHtml.slice(
+    indexHtml.indexOf("async function scanComplex"),
+    indexHtml.indexOf('el("scan-button").addEventListener'),
+  );
+  assert.match(scan, /await runCacheFirstRefresh\(\{/);
+});
+
+test("cache-first orchestration은 저장 상태를 먼저 적용하고 새 topology로 정리한다", async () => {
+  assert.equal(typeof cacheModule.runCacheFirstRefresh, "function");
+  const body = structuredClone(snapshot);
+  body.cache = "stale";
+  body.meta = {
+    total: 2,
+    dongs: [{ name: "101", hos: ["201", "999"], grid: null }],
+    supply: [],
+  };
+  body.units = [
+    { dong: "101", ho: "201", status: "info", fields: {} },
+    { dong: "101", ho: "999", status: "empty", fields: {} },
+  ];
+  body.refresh.topology = true;
+  body.refresh.units = [{ dong: "101", ho: "202" }];
+
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+  const events = [];
+  const requested = [];
+  await cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => {
+      events.push("fetch-topology");
+      return {
+        total: 2,
+        dongs: [{ name: "101", hos: ["201", "202"], grid: null }],
+        supply: null,
+      };
+    },
+    fetchSupply: async () => [],
+    fetchUnit: async (job) => {
+      requested.push(job);
+      return { ...job, status: "empty", fields: {} };
+    },
+    runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+    onStored: () => {
+      events.push("stored");
+      assert.equal(state.units.size, 2);
+      assert.ok(state.units.has(unitKey("101", "999")));
+    },
+    onTopology: () => {
+      events.push("topology");
+      assert.equal(state.units.size, 1);
+      assert.ok(!state.units.has(unitKey("101", "999")));
+    },
+    onUnit: (unit) => events.push(`unit:${unit.ho}`),
+  });
+
+  assert.deepEqual(events, ["stored", "fetch-topology", "topology", "unit:202"]);
+  assert.deepEqual(requested, [{ dong: "101", ho: "202" }]);
+  assert.deepEqual([...state.units.keys()].sort(), [
+    unitKey("101", "201"), unitKey("101", "202"),
+  ]);
+});
+
+test("cache 조회 실패는 현재 topology 전체를 직접 갱신한다", async () => {
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+  const requested = [];
+  let result;
+  await assert.doesNotReject(async () => {
+    result = await cacheModule.runCacheFirstRefresh({
+      state,
+      loadSnapshot: async () => { throw new Error("cache offline"); },
+      fetchTopology: async () => ({
+        total: 2,
+        dongs: [{ name: "101", hos: ["201", "202"], grid: null }],
+        supply: null,
+      }),
+      fetchSupply: async () => [],
+      fetchUnit: async (job) => {
+        requested.push(job);
+        return { ...job, status: "info", fields: {} };
+      },
+      runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+    });
+  });
+
+  assert.equal(result.snapshot.cache, "disabled");
+  assert.deepEqual(requested, [
+    { dong: "101", ho: "201" }, { dong: "101", ho: "202" },
+  ]);
+  assert.equal(state.units.size, 2);
+});
+
+test("빈 topology 갱신도 prune 뒤 화면 replay를 요청한다", async () => {
+  const body = structuredClone(snapshot);
+  body.cache = "stale";
+  body.meta = {
+    total: 1,
+    dongs: [{ name: "101", hos: ["999"], grid: null }],
+    supply: [],
+  };
+  body.units = [{ dong: "101", ho: "999", status: "empty", fields: {} }];
+  body.refresh.topology = true;
+  body.refresh.units = [];
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+  let replayed = 0;
+
+  const result = await cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => ({ total: 0, dongs: [], supply: null }),
+    fetchSupply: async () => [],
+    fetchUnit: async () => assert.fail("empty topology has no unit work"),
+    runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+    onTopology: () => {
+      replayed += 1;
+      assert.equal(state.units.size, 0);
+    },
+  });
+
+  assert.equal(result.status, "empty");
+  assert.equal(replayed, 1);
 });
