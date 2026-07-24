@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import pathlib
 import secrets
@@ -33,6 +35,31 @@ def complex_to_dict(item: applyhome.Complex) -> dict:
     }
 
 
+CSV_HEADER = (
+    "동", "호", "판정", "주택형", "공급유형", "공고일",
+    "당첨자 발표일", "계약체결일", "입주예정", "전매제한", "분양금액(만원)",
+)
+STATUS_LABEL = {"info": "정보있음", "empty": "정보없음", "error": "조회실패"}
+
+
+def build_csv(units: list[dict]) -> str:
+    """엑셀에서 바로 열리도록 UTF-8 BOM을 붙인 CSV 를 만든다."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, lineterminator="\n")
+    writer.writerow(CSV_HEADER)
+    for unit in units:
+        fields = unit.get("fields") or {}
+        writer.writerow(
+            [
+                unit.get("dong", ""),
+                unit.get("ho", ""),
+                STATUS_LABEL.get(unit.get("status", ""), unit.get("status", "")),
+                *(fields.get(key, "") for key in CSV_HEADER[3:]),
+            ]
+        )
+    return "﻿" + buffer.getvalue()
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -49,6 +76,10 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_search(query)
         elif parsed.path == "/api/scan":
             self._handle_scan(query)
+        elif parsed.path == "/api/export":
+            self._handle_export(query)
+        elif parsed.path == "/api/unit":
+            self._handle_unit(query)
         else:
             self._send_json({"message": "없는 경로입니다."}, status=404)
 
@@ -107,6 +138,55 @@ class Handler(BaseHTTPRequestHandler):
 
         scanner.scan_complex(hm, pb, emit, stop=stop)
         self.close_connection = True
+
+    def _handle_export(self, query: dict):
+        token = self._one(query, "token")
+        units = SCANS.get(token)
+        if units is None:
+            self._send_json({"message": "스캔 결과를 찾을 수 없습니다."}, status=404)
+            return
+        body = build_csv(units).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", 'attachment; filename="scan.csv"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_unit(self, query: dict):
+        """조회에 실패한 세대 하나를 다시 부른다.
+
+        token 이 함께 오면 보관 중인 스캔 결과도 갱신한다. 그래야 이어서 받는 CSV 에
+        재시도 결과가 반영된다.
+        """
+        hm = self._one(query, "hm")
+        pb = self._one(query, "pb")
+        dong = self._one(query, "dong")
+        ho = self._one(query, "ho")
+        if not (hm and pb and dong and ho):
+            self._send_json({"message": "hm, pb, dong, ho 값이 모두 필요합니다."}, status=400)
+            return
+
+        try:
+            unit = applyhome.fetch_detail(hm, pb, dong, ho)
+            payload = {
+                "dong": unit.dong, "ho": unit.ho,
+                "status": unit.status, "fields": unit.fields,
+            }
+        except applyhome.ApplyhomeError as error:
+            payload = {
+                "dong": dong, "ho": ho, "status": "error",
+                "fields": {}, "message": str(error),
+            }
+
+        units = SCANS.get(self._one(query, "token"))
+        if units is not None:
+            for index, existing in enumerate(units):
+                if existing.get("dong") == dong and existing.get("ho") == ho:
+                    units[index] = payload
+                    break
+
+        self._send_json(payload)
 
     def _send_json(self, payload: dict, status: int = 200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
