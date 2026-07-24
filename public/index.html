@@ -148,6 +148,18 @@
 
   footer { margin-top: var(--band); border-top: 1px solid var(--hairline);
            padding: 32px 40px 64px; }
+  .footer-source { margin: 0; }
+  footer a {
+    color: var(--body-strong);
+    text-decoration-color: var(--hairline);
+    text-underline-offset: 3px;
+  }
+  footer a:hover { color: var(--on-dark); text-decoration-color: currentColor; }
+  footer a:focus-visible { outline: 1px solid var(--on-dark); outline-offset: 3px; }
+  .footer-meta {
+    display: flex; flex-wrap: wrap; gap: 8px 24px;
+    margin-top: 10px;
+  }
 
   @media (max-width: 768px) {
     .wrap, #detail:not(:empty), footer { padding-left: 20px; padding-right: 20px; }
@@ -208,7 +220,18 @@
 <div id="detail"></div>
 
 <footer class="caption">
-  청약홈 「분양권 정보(전매제한 등)」 페이지의 공개 데이터를 조회합니다. 참고용으로만 활용하세요.
+  <p class="footer-source">
+    데이터 출처:
+    <a href="https://www.applyhome.co.kr/rs/rsa/selectResaleListView.do"
+       target="_blank" rel="noopener noreferrer">청약홈 「분양권 정보(전매제한 등)」</a>의
+    공개 데이터를 조회합니다. 참고용으로만 활용하세요.
+  </p>
+  <div class="footer-meta">
+    <span>저장소 <a href="https://github.com/KIMSUNGHOON/find-applyhome"
+      target="_blank" rel="noopener noreferrer">KIMSUNGHOON/find-applyhome</a></span>
+    <span>개발자 <a href="https://github.com/KIMSUNGHOON"
+      target="_blank" rel="noopener noreferrer">Seonghun Kim · @KIMSUNGHOON</a></span>
+  </div>
 </footer>
 
 <script type="module">
