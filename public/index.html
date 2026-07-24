@@ -216,7 +216,7 @@ const AREAS = ["강원","경기","경남","경북","광주","대구","대전","�
 
 const el = (id) => document.getElementById(id);
 const state = {
-  complex: null, meta: null, units: new Map(), token: null, source: null,
+  complex: null, meta: null, units: new Map(), aborted: false,
   search: { name: "", area: "", page: 1, loaded: 0, total: 0 },
 };
 
@@ -314,11 +314,41 @@ function renderResults(body) {
   });
 }
 
-el("scan-button").addEventListener("click", () => {
+// 청약홈이 공공 사이트라 동시에 이만큼만 부른다.
+// 요청이 끝나야 다음이 나가므로, 청약홈이 느려지면 스캔도 자동으로 함께 느려진다.
+//
+// setTimeout 으로 요청 간격을 두지 않는다. 브라우저는 백그라운드 탭의 타이머를
+// 1초로 묶어버려서, 사용자가 다른 탭을 보는 동안 스캔이 네 배 느려진다(실측 15초 → 62초).
+// 요청 자체가 0.17초쯤 걸리므로 동시 수 제한만으로 충분히 완만하다.
+const CONCURRENCY = 3;
+
+// 작업 목록을 동시 CONCURRENCY 개로 처리한다. 동·호 목록 조회와 세대 조회가 같은 러너를 쓴다.
+async function runPool(items, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function loop() {
+    while (true) {
+      const index = next++;
+      if (index >= items.length || state.aborted) return;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: CONCURRENCY }, loop));
+  return results;
+}
+
+async function getJson(path, params) {
+  const response = await fetch(path + "?" + new URLSearchParams(params));
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.message || `요청 실패 (${response.status})`);
+  return body;
+}
+
+el("scan-button").addEventListener("click", async () => {
   if (!state.complex) return;
   state.meta = null;
   state.units = new Map();
-  state.token = null;
+  state.aborted = false;
   el("grids").innerHTML = "";
   el("summary").innerHTML = "";
   el("empty-list").innerHTML = "";
@@ -326,56 +356,86 @@ el("scan-button").addEventListener("click", () => {
   el("notice-band").classList.add("hide");
   el("scan-button").disabled = true;
   el("stop-button").classList.remove("hide");
+  el("progress").textContent = "동·호 목록을 불러오는 중…";
 
-  const params = new URLSearchParams({
-    hm: state.complex.house_manage_no,
-    pb: state.complex.pblanc_no,
-  });
-  const source = new EventSource("/api/scan?" + params);
-  state.source = source;
+  const hm = state.complex.house_manage_no;
+  const pb = state.complex.pblanc_no;
+  const started = Date.now();
 
-  source.addEventListener("meta", (event) => {
-    state.meta = JSON.parse(event.data);
-    el("progress").textContent = `0 / ${state.meta.total}`;
+  try {
+    const { dongs } = await getJson("/api/dongs", { hm, pb });
+    if (!dongs.length) {
+      el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
+      finishScan();
+      return;
+    }
+
+    // 동마다 호 목록을 받는다
+    const perDong = await runPool(dongs, (dong) =>
+      getJson("/api/hos", { hm, pb, sn: dong.sn }).then((r) => ({ ...r, name: dong.name }))
+    );
+    if (state.aborted) { finishScan(); return; }
+
+    const metaDongs = perDong.filter(Boolean).map((d) => ({
+      name: d.name, hos: d.hos, grid: d.grid,
+    }));
+    const jobs = [];
+    metaDongs.forEach((d) => d.hos.forEach((ho) => jobs.push({ dong: d.name, ho })));
+
+    if (!jobs.length) {
+      el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
+      finishScan();
+      return;
+    }
+
+    // 공고 정보는 부가 정보다. 실패해도 스캔을 막지 않는다.
+    const supply = await getJson("/api/pblanc", { hm, pb })
+      .then((r) => r.supply)
+      .catch(() => null);
+
+    state.meta = { total: jobs.length, dongs: metaDongs, supply };
     onMeta(state.meta);
-  });
+    el("progress").textContent = `0 / ${jobs.length}`;
 
-  source.addEventListener("unit", (event) => {
-    const unit = JSON.parse(event.data);
-    state.units.set(unit.dong + "-" + unit.ho, unit);
-    onUnit(unit);
-    el("progress").textContent = `${state.units.size} / ${state.meta.total}`;
-  });
+    await runPool(jobs, async (job) => {
+      const unit = await getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho })
+        .catch(() => ({ dong: job.dong, ho: job.ho, status: "error", fields: {} }));
+      state.units.set(unit.dong + "-" + unit.ho, unit);
+      onUnit(unit);
+      el("progress").textContent = `${state.units.size} / ${jobs.length}`;
+      return unit;
+    });
 
-  source.addEventListener("done", (event) => {
-    const summary = JSON.parse(event.data);
-    state.token = summary.token;
+    if (state.aborted) {
+      el("progress").textContent = `중단됨 · ${state.units.size}세대까지 조회`;
+      finishScan();
+      return;
+    }
+
+    const tally = { info: 0, empty: 0, error: 0 };
+    state.units.forEach((u) => { tally[u.status] = (tally[u.status] || 0) + 1; });
+    const summary = {
+      total: jobs.length, ...tally,
+      elapsed: ((Date.now() - started) / 1000).toFixed(1),
+    };
     el("progress").textContent =
       `완료 · ${summary.total}세대 중 정보없음 ${summary.empty}건` +
       (summary.error ? ` · 실패 ${summary.error}건` : "") +
       ` (${summary.elapsed}초)`;
     finishScan();
     onDone(summary);
-  });
-
-  source.addEventListener("error", (event) => {
-    if (event.data) {
-      const payload = JSON.parse(event.data);
-      el("progress").textContent = payload.message;
-    } else if (state.units.size === 0) {
-      el("progress").textContent = "서버 연결이 끊겼습니다.";
-    }
+  } catch (error) {
+    el("progress").textContent = error.message;
     finishScan();
-  });
+  }
 });
 
 el("stop-button").addEventListener("click", () => {
-  el("progress").textContent = `중단됨 · ${state.units.size}세대까지 조회`;
-  finishScan();
+  state.aborted = true;
+  el("progress").textContent = `중단하는 중… (${state.units.size}세대까지 조회)`;
 });
 
 function finishScan() {
-  if (state.source) { state.source.close(); state.source = null; }
   el("scan-button").disabled = false;
   el("stop-button").classList.add("hide");
 }
@@ -586,17 +646,55 @@ function renderSummary() {
     `<div class="specs">${cells.join("")}</div>`;
 }
 
+const CSV_HEADER = [
+  "동", "호", "타입", "판정", "주택형", "공급유형", "공고일",
+  "당첨자 발표일", "계약체결일", "입주예정", "전매제한", "분양금액(만원)",
+];
+const STATUS_LABEL = { info: "정보있음", empty: "정보없음", error: "조회실패" };
+
+function csvCell(value) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function buildCsv() {
+  const lines = [CSV_HEADER.join(",")];
+  for (const unit of state.units.values()) {
+    const f = unit.fields || {};
+    const houseType = f["주택형"] || "";
+    lines.push([
+      unit.dong, unit.ho,
+      houseType ? shortType(houseType) : "",
+      STATUS_LABEL[unit.status] || unit.status,
+      ...CSV_HEADER.slice(4).map((key) => f[key] || ""),
+    ].map(csvCell).join(","));
+  }
+  // 엑셀에서 바로 열리도록 UTF-8 BOM 을 붙인다
+  return "﻿" + lines.join("\n") + "\n";
+}
+
+function downloadCsv() {
+  const blob = new Blob([buildCsv()], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${state.complex ? state.complex.name : "scan"}.csv`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function renderActions(summary) {
   const bar = document.createElement("div");
   bar.className = "actions";
-  if (state.token) {
-    const a = document.createElement("a");
-    a.className = "link";
-    a.href = `/api/export?token=${state.token}`;
-    a.setAttribute("download", "");
-    a.textContent = "CSV Download";
-    bar.append(a);
-  }
+
+  const button = document.createElement("button");
+  button.className = "btn";
+  button.textContent = "CSV Download";
+  button.addEventListener("click", downloadCsv);
+  bar.append(button);
+
   el("empty-list").prepend(bar);
   if (summary.error) renderRetry(summary, bar);
 }
@@ -615,7 +713,6 @@ function renderRetry(summary, bar) {
         pb: state.complex.pblanc_no,
         dong: unit.dong,
         ho: unit.ho,
-        token: state.token || "",
       });
       try {
         const fresh = await (await fetch("/api/unit?" + params)).json();
