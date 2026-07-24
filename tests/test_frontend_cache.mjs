@@ -117,6 +117,18 @@ test("getJson은 202 본문과 HTTP 상태를 반환한다", async () => {
   });
 });
 
+test("getJson은 JSON 해석이 실패한 202도 HTTP 상태로 반환한다", async () => {
+  const fetch = async () => ({
+    ok: false,
+    status: 202,
+    json: async () => { throw new SyntaxError("invalid JSON"); },
+  });
+  const getJson = loadInlineFunction("getJson", { fetch });
+  assert.deepEqual(await getJson("/api/unit", { dong: "101", ho: "201" }), {
+    http_status: 202,
+  });
+});
+
 test("getJson은 202 외 non-OK 응답을 거부한다", async () => {
   const fetch = async () => ({
     ok: false,
@@ -130,50 +142,107 @@ test("getJson은 202 외 non-OK 응답을 거부한다", async () => {
   );
 });
 
-test("refreshing 호실은 기존 checked_at보다 최신 공유 결과만 병합한다", async () => {
-  const units = new Map([[unitKey("101", "201"), {
-    dong: "101", ho: "201", status: "empty", fields: {}, checked_at: 10,
-  }]]);
-  const state = { units };
-  const rendered = [];
-  const snapshots = [
-    { units: [{ dong: "101", ho: "201", status: "info", fields: {}, checked_at: 10 }] },
-    { units: [{ dong: "101", ho: "201", status: "info", fields: {}, checked_at: 11 }] },
-  ];
-  const responses = structuredClone(snapshots);
-  const poll = async (load, accept) => {
-    for (const _body of snapshots) {
-      const loaded = await load();
-      if (accept(loaded)) return loaded;
-    }
-    return null;
+function completeSnapshot(units) {
+  return {
+    cache: "partial",
+    checked_at: 11,
+    meta: { total: 1, dongs: [{ name: "101", hos: ["201"], grid: null }], supply: [] },
+    units,
+    refresh: { topology: false, supply: false, all_units: false, units: [] },
+    full_refresh: { allowed: true, retry_after: 0 },
   };
-  const getJson = async (_path, _params) => responses.shift();
-  const resolveRefreshingUnit = loadInlineFunction("resolveRefreshingUnit", {
-    pollSharedSnapshot: poll, getJson, mergeUnits, state,
-    onUnit: (unit) => rendered.push(unit),
-  });
+}
 
-  const found = await resolveRefreshingUnit("hm", "pb", { dong: "101", ho: "201" }, 10);
-  assert.equal(found.checked_at, 11);
-  assert.equal(state.units.get(unitKey("101", "201")).checked_at, 11);
-  assert.deepEqual(rendered, [found]);
+test("본문이 빈 202도 경합으로 보고 최신 공유 호실을 반환한다", async () => {
+  assert.equal(typeof cacheModule.resolveUnitRequest, "function");
+  const job = { dong: "101", ho: "201" };
+  const fresh = { ...job, status: "info", fields: {}, checked_at: 11 };
+  const result = await cacheModule.resolveUnitRequest({
+    job,
+    loadUnit: async () => ({ http_status: 202 }),
+    loadSnapshot: async () => completeSnapshot([fresh]),
+    wait: async () => {},
+  });
+  assert.equal(result, fresh);
 });
 
-test("공유 결과가 없으면 기존 호실은 보존하고 최초 호실만 화면 오류가 된다", async () => {
-  const previous = { dong: "101", ho: "201", status: "info", fields: {}, checked_at: 10 };
-  const state = { units: new Map([[unitKey("101", "201"), previous]]) };
-  const getJson = async () => ({ status: "refreshing", refreshing: true });
-  const resolveRefreshingUnit = async () => null;
-  const fetchResolvedUnit = loadInlineFunction("fetchResolvedUnit", {
-    state, unitKey, getJson, resolveRefreshingUnit,
+test("200 refreshing은 stale·무관 snapshot을 건너뛰고 최신 일치 호실만 반환한다", async () => {
+  const job = { dong: "101", ho: "201" };
+  const previous = { ...job, status: "empty", fields: {}, checked_at: 10 };
+  const newer = { ...job, status: "info", fields: {}, checked_at: 11 };
+  const unrelated = { dong: "102", ho: "301", status: "info", fields: {}, checked_at: 99 };
+  const responses = [
+    completeSnapshot([previous, unrelated]),
+    completeSnapshot([unrelated]),
+    completeSnapshot([newer]),
+  ];
+  let loads = 0;
+  const result = await cacheModule.resolveUnitRequest({
+    job,
+    previous,
+    loadUnit: async () => ({ ...previous, refreshing: true, http_status: 200 }),
+    loadSnapshot: async () => { loads += 1; return responses.shift(); },
+    wait: async () => {},
   });
+  assert.equal(result, newer);
+  assert.equal(loads, 3);
+});
 
-  assert.equal(await fetchResolvedUnit("hm", "pb", previous), previous);
-  state.units.clear();
-  assert.deepEqual(await fetchResolvedUnit("hm", "pb", previous), {
+test("poll 중 cache 조회 실패는 해당 시도만 비우고 다음 최신 결과를 받는다", async () => {
+  const job = { dong: "101", ho: "201" };
+  const fresh = { ...job, status: "info", fields: {}, checked_at: 11 };
+  let loads = 0;
+  const result = await cacheModule.resolveUnitRequest({
+    job,
+    loadUnit: async () => ({ ...job, status: "refreshing", fields: {}, http_status: 202 }),
+    loadSnapshot: async () => {
+      loads += 1;
+      if (loads === 1) throw new Error("cache offline");
+      return completeSnapshot([fresh]);
+    },
+    wait: async () => {},
+  });
+  assert.equal(result, fresh);
+  assert.equal(loads, 2);
+});
+
+test("poll 소진 시 기존 호실을 그대로 반환한다", async () => {
+  const job = { dong: "101", ho: "201" };
+  const previous = { ...job, status: "empty", fields: {}, checked_at: 10 };
+  const result = await cacheModule.resolveUnitRequest({
+    job,
+    previous,
+    loadUnit: async () => ({ http_status: 202 }),
+    loadSnapshot: async () => completeSnapshot([previous]),
+    wait: async () => {},
+  });
+  assert.equal(result, previous);
+});
+
+test("poll 소진 시 기존값이 없는 호실만 client error를 반환한다", async () => {
+  const job = { dong: "101", ho: "201" };
+  const result = await cacheModule.resolveUnitRequest({
+    job,
+    loadUnit: async () => ({ http_status: 202 }),
+    loadSnapshot: async () => completeSnapshot([]),
+    wait: async () => {},
+  });
+  assert.deepEqual(result, {
     dong: "101", ho: "201", status: "error", fields: {},
   });
+});
+
+test("poll wait에서 중단되면 snapshot을 읽지 않고 null을 반환한다", async () => {
+  let aborted = false;
+  let loads = 0;
+  const found = await pollSharedSnapshot(
+    async () => { loads += 1; return completeSnapshot([]); },
+    () => false,
+    async () => { aborted = true; },
+    () => aborted,
+  );
+  assert.equal(found, null);
+  assert.equal(loads, 0);
 });
 
 test("cache 상태는 저장·직접·업데이트 필요를 사용자 문구로 표시한다", () => {
@@ -204,7 +273,8 @@ test("페이지 scanComplex는 검증된 cache-first orchestration을 호출한�
     indexHtml.indexOf('el("scan-button").addEventListener'),
   );
   assert.match(scan, /await runCacheFirstRefresh\(\{/);
-  assert.match(scan, /fetchUnit:\s*\(job\)\s*=>\s*fetchResolvedUnit\(hm, pb, job\)/);
+  assert.match(indexHtml, /resolveUnitRequest,/);
+  assert.match(indexHtml, /isAborted:\s*\(\)\s*=>\s*state\.aborted/);
   assert.match(indexHtml, /renderRetry[\s\S]*fetchResolvedUnit\(/);
   assert.match(indexHtml, /scanComplex\(\{ forceFull: true \}\)/);
   assert.match(indexHtml, /id="cache-status" class="caption"/);
@@ -376,4 +446,193 @@ test("빈 topology 갱신도 prune 뒤 화면 replay를 요청한다", async () 
 
   assert.equal(result.status, "empty");
   assert.equal(replayed, 1);
+});
+
+test("호실 poll wait 중 중단하면 Map·render·progress를 건드리지 않는다", async () => {
+  const body = structuredClone(snapshot);
+  body.meta = {
+    total: 1,
+    dongs: [{ name: "101", hos: ["202"], grid: null }],
+    supply: [],
+  };
+  body.units = [];
+  body.refresh.units = [{ dong: "101", ho: "202" }];
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+  let rendered = 0;
+  let progressed = 0;
+
+  const result = await cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => assert.fail("cached topology must be reused"),
+    fetchSupply: async () => assert.fail("cached supply must be reused"),
+    fetchUnit: (job) => cacheModule.resolveUnitRequest({
+      job,
+      loadUnit: async () => ({ http_status: 202 }),
+      loadSnapshot: async () => assert.fail("abort after wait must skip snapshot load"),
+      wait: async () => { state.aborted = true; },
+      isAborted: () => state.aborted,
+    }),
+    runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+    onUnit: () => { rendered += 1; },
+    onProgress: () => { progressed += 1; },
+  });
+
+  assert.equal(result.status, "aborted");
+  assert.equal(state.units.size, 0);
+  assert.equal(rendered, 0);
+  assert.equal(progressed, 0);
+  assert.equal(result.updated, 0);
+});
+
+test("polled 호실은 cache-first owner가 Map·render·progress를 한 번만 반영한다", async () => {
+  const body = structuredClone(snapshot);
+  body.meta = {
+    total: 1,
+    dongs: [{ name: "101", hos: ["202"], grid: null }],
+    supply: [],
+  };
+  body.units = [];
+  body.refresh.units = [{ dong: "101", ho: "202" }];
+  const fresh = { dong: "101", ho: "202", status: "info", fields: {}, checked_at: 11 };
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+  let rendered = 0;
+  let progressed = 0;
+  const result = await cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => assert.fail("cached topology must be reused"),
+    fetchSupply: async () => assert.fail("cached supply must be reused"),
+    fetchUnit: (job) => cacheModule.resolveUnitRequest({
+      job,
+      loadUnit: async () => ({ http_status: 202 }),
+      loadSnapshot: async () => completeSnapshot([fresh]),
+      wait: async () => {},
+    }),
+    runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+    onUnit: () => { rendered += 1; },
+    onProgress: () => { progressed += 1; },
+  });
+  assert.equal(state.units.get(unitKey("101", "202")), fresh);
+  assert.equal(rendered, 1);
+  assert.equal(progressed, 1);
+  assert.equal(result.updated, 1);
+});
+
+test("호실 load 뒤 중단되어도 Map·render·progress를 건드리지 않는다", async () => {
+  const body = structuredClone(snapshot);
+  body.meta = {
+    total: 1,
+    dongs: [{ name: "101", hos: ["202"], grid: null }],
+    supply: [],
+  };
+  body.units = [];
+  body.refresh.units = [{ dong: "101", ho: "202" }];
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+  let releaseUnit;
+  let markStarted;
+  const pendingUnit = new Promise((resolve) => { releaseUnit = resolve; });
+  const started = new Promise((resolve) => { markStarted = resolve; });
+  let rendered = 0;
+  let progressed = 0;
+  const running = cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => assert.fail("cached topology must be reused"),
+    fetchSupply: async () => assert.fail("cached supply must be reused"),
+    fetchUnit: async () => { markStarted(); return pendingUnit; },
+    runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+    onUnit: () => { rendered += 1; },
+    onProgress: () => { progressed += 1; },
+  });
+
+  await started;
+  state.aborted = true;
+  releaseUnit({ dong: "101", ho: "202", status: "info", fields: {} });
+  const result = await running;
+  assert.equal(result.status, "aborted");
+  assert.equal(state.units.size, 0);
+  assert.equal(rendered, 0);
+  assert.equal(progressed, 0);
+  assert.equal(result.updated, 0);
+});
+
+test("onUnit은 이전 status·공급 class와 text·title을 완전히 교체한다", () => {
+  const classes = new Set(["cell", "error", "supply-s"]);
+  const cell = {
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
+    },
+    textContent: "특",
+    title: "old",
+  };
+  const onUnit = loadInlineFunction("onUnit", {
+    document: { getElementById: () => cell },
+    cellId: () => "c-101-201",
+    SUPPLY_MARK: { "특별공급": "특", "일반공급": "일" },
+    SUPPLY_CLASS: { "특별공급": "supply-s", "일반공급": "supply-g" },
+    shortType: () => "84A",
+  });
+
+  onUnit({
+    dong: "101", ho: "201", status: "info",
+    fields: { "주택형": "084.8422A", "공급유형": "일반공급" },
+  });
+  assert.deepEqual([...classes].sort(), ["cell", "info", "supply-g"]);
+  assert.equal(cell.textContent, "일");
+  assert.equal(cell.title, "101동 201호 · 84A · 일반공급");
+
+  onUnit({ dong: "101", ho: "201", status: "empty", fields: {} });
+  assert.deepEqual([...classes].sort(), ["cell", "empty"]);
+  assert.equal(cell.textContent, "");
+  assert.equal(cell.title, "101동 201호");
+});
+
+test("직접 retry 결과는 Map 뒤 onUnit과 전체 onDone 순서로 반영한다", async () => {
+  const failed = { dong: "101", ho: "201", status: "error", fields: {} };
+  const fresh = {
+    dong: "101", ho: "201", status: "info",
+    fields: { "주택형": "084.8422A", "공급유형": "일반공급" },
+  };
+  const state = {
+    complex: { house_manage_no: "hm", pblanc_no: "pb" },
+    meta: { total: 1 },
+    units: new Map([[unitKey("101", "201"), failed]]),
+  };
+  const events = [];
+  const retryFailedUnits = loadInlineFunction("retryFailedUnits", {
+    state,
+    unitKey,
+    fetchResolvedUnit: async () => fresh,
+    onUnit: (unit) => {
+      assert.equal(state.units.get(unitKey(unit.dong, unit.ho)), fresh);
+      events.push("unit");
+    },
+    summarize: () => ({ total: 1, info: 1, empty: 0, error: 0, elapsed: "1.0" }),
+    onDone: (summary) => events.push(`done:${summary.error}`),
+  });
+
+  const updated = await retryFailedUnits({ elapsed: "1.0", error: 1 });
+  assert.equal(state.units.get(unitKey("101", "201")), fresh);
+  assert.deepEqual(events, ["unit", "done:0"]);
+  assert.equal(updated.error, 0);
+});
+
+test("server full-refresh 거부는 후속 작업 없이 retry_after를 노출한다", async () => {
+  const body = structuredClone(snapshot);
+  body.full_refresh = { allowed: false, retry_after: 37 };
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+  const result = await cacheModule.runCacheFirstRefresh({
+    state,
+    forceFull: true,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => assert.fail("blocked full refresh must not fetch topology"),
+    fetchSupply: async () => assert.fail("blocked full refresh must not fetch supply"),
+    fetchUnit: async () => assert.fail("blocked full refresh must not fetch units"),
+    runJobs: async () => assert.fail("blocked full refresh must not start jobs"),
+  });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.snapshot.full_refresh.retry_after, 37);
+  assert.equal(result.updated, 0);
 });

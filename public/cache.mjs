@@ -118,10 +118,10 @@ export async function runCacheFirstRefresh({
   let updated = 0;
   await runJobs(jobs, async (job) => {
     const unit = await fetchUnit(job);
-    if (unit.status !== "refreshing") {
-      state.units.set(unitKey(unit.dong, unit.ho), unit);
-      await onUnit(unit);
-    }
+    if (!unit || state.aborted || unit.status === "refreshing") return unit;
+    state.units.set(unitKey(unit.dong, unit.ho), unit);
+    await onUnit(unit);
+    if (state.aborted) return unit;
     updated += 1;
     await onProgress({ updated, total: jobs.length });
     return unit;
@@ -136,13 +136,65 @@ export async function runCacheFirstRefresh({
 }
 
 export async function pollSharedSnapshot(load, accept, wait =
-  (delay) => new Promise((resolve) => setTimeout(resolve, delay))) {
+  (delay) => new Promise((resolve) => setTimeout(resolve, delay)), isAborted = () => false) {
   for (const delay of POLL_DELAYS_MS) {
+    if (isAborted()) return null;
     await wait(delay);
-    const snapshot = await load();
-    if (accept(snapshot)) return snapshot;
+    if (isAborted()) return null;
+    let snapshot;
+    try {
+      snapshot = await load();
+    } catch (error) {
+      continue;
+    }
+    if (isAborted()) return null;
+    if (snapshot && accept(snapshot)) return snapshot;
   }
   return null;
+}
+
+function clientUnitError(job) {
+  return { dong: job.dong, ho: job.ho, status: "error", fields: {} };
+}
+
+function snapshotUnit(snapshot, job) {
+  return (snapshot?.units || []).find((unit) =>
+    unit.dong === job.dong && unit.ho === job.ho);
+}
+
+export async function resolveUnitRequest({
+  job,
+  previous = null,
+  loadUnit,
+  loadSnapshot,
+  wait,
+  isAborted = () => false,
+}) {
+  if (isAborted()) return null;
+  let fresh;
+  try {
+    fresh = await loadUnit(job);
+  } catch (error) {
+    return isAborted() ? null : (previous || clientUnitError(job));
+  }
+  if (isAborted()) return null;
+  if (!fresh) return previous || clientUnitError(job);
+  const refreshing = fresh.http_status === 202 || fresh.refreshing ||
+    fresh.status === "refreshing";
+  if (!refreshing) return fresh;
+
+  const previousCheckedAt = previous?.checked_at || 0;
+  const found = await pollSharedSnapshot(
+    loadSnapshot,
+    (snapshot) => {
+      const unit = snapshotUnit(snapshot, job);
+      return Boolean(unit && (unit.checked_at || 0) > previousCheckedAt);
+    },
+    wait,
+    isAborted,
+  );
+  if (isAborted()) return null;
+  return snapshotUnit(found, job) || previous || clientUnitError(job);
 }
 
 export function formatCheckedAt(value) {

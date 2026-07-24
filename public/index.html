@@ -213,7 +213,7 @@
 
 <script type="module">
 import {
-  formatCheckedAt, mergeUnits, pollSharedSnapshot, runCacheFirstRefresh, unitKey,
+  formatCheckedAt, resolveUnitRequest, runCacheFirstRefresh, unitKey,
 } from "/cache.mjs";
 
 const AREAS = ["강원","경기","경남","경북","광주","대구","대전","부산","서울","세종",
@@ -352,34 +352,15 @@ async function getJson(path, params) {
   return { ...body, http_status: response.status };
 }
 
-async function resolveRefreshingUnit(hm, pb, job, previousCheckedAt = 0) {
-  const found = await pollSharedSnapshot(
-    () => getJson("/api/cache", { hm, pb }),
-    (snapshot) => {
-      const unit = (snapshot.units || []).find((item) =>
-        item.dong === job.dong && item.ho === job.ho);
-      return Boolean(unit && (unit.checked_at || 0) > previousCheckedAt);
-    },
-  );
-  if (!found) return null;
-  const unit = found.units.find((item) => item.dong === job.dong && item.ho === job.ho);
-  mergeUnits(state.units, [unit]);
-  onUnit(unit);
-  return unit;
-}
-
 async function fetchResolvedUnit(hm, pb, job) {
   const previous = state.units.get(unitKey(job.dong, job.ho));
-  let fresh;
-  try {
-    fresh = await getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho });
-  } catch (error) {
-    return previous || { dong: job.dong, ho: job.ho, status: "error", fields: {} };
-  }
-  if (fresh.refreshing || fresh.status === "refreshing") {
-    fresh = await resolveRefreshingUnit(hm, pb, job, previous?.checked_at || 0);
-  }
-  return fresh || previous || { dong: job.dong, ho: job.ho, status: "error", fields: {} };
+  return resolveUnitRequest({
+    job,
+    previous,
+    loadUnit: () => getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho }),
+    loadSnapshot: () => getJson("/api/cache", { hm, pb }),
+    isAborted: () => state.aborted,
+  });
 }
 
 async function fetchTopology(hm, pb) {
@@ -607,7 +588,7 @@ const SUPPLY_CLASS = { "특별공급": "supply-s", "일반공급": "supply-g" };
 function onUnit(unit) {
   const cell = document.getElementById(cellId(unit.dong, unit.ho));
   if (!cell) return;
-  cell.classList.remove("supply-s", "supply-g");  // 재시도로 값이 바뀔 수 있다
+  cell.classList.remove("error", "empty", "info", "supply-s", "supply-g");
   cell.classList.add(unit.status);
 
   const type = unit.fields["주택형"] || "";
@@ -789,33 +770,30 @@ function renderRetry(summary, bar) {
   button.addEventListener("click", async () => {
     button.disabled = true;
     button.textContent = "Retrying…";
-    const failed = [...state.units.values()].filter((unit) => unit.status === "error");
-    for (const unit of failed) {
-      try {
-        const fresh = await fetchResolvedUnit(
-          state.complex.house_manage_no,
-          state.complex.pblanc_no,
-          unit,
-        );
-        if (!fresh) continue;
-        state.units.set(unitKey(fresh.dong, fresh.ho), fresh);
-        const cell = document.getElementById(cellId(fresh.dong, fresh.ho));
-        if (cell) {
-          cell.classList.remove("error", "info", "empty");
-          cell.classList.add(fresh.status);
-        }
-      } catch (error) {
-        // 이 세대는 그대로 두고 다음으로 넘어간다
-      }
-    }
-    const tally = { info: 0, empty: 0, error: 0 };
-    state.units.forEach((unit) => { tally[unit.status] = (tally[unit.status] || 0) + 1; });
-    const updated = { ...summary, ...tally };
-    renderLegend(updated);
-    renderEmptyList();
-    renderActions(updated);
+    await retryFailedUnits(summary);
   });
   bar.append(button);
+}
+
+async function retryFailedUnits(summary) {
+  const failed = [...state.units.values()].filter((unit) => unit.status === "error");
+  for (const unit of failed) {
+    try {
+      const fresh = await fetchResolvedUnit(
+        state.complex.house_manage_no,
+        state.complex.pblanc_no,
+        unit,
+      );
+      if (!fresh || state.aborted) continue;
+      state.units.set(unitKey(fresh.dong, fresh.ho), fresh);
+      onUnit(fresh);
+    } catch (error) {
+      // 이 세대는 그대로 두고 다음으로 넘어간다
+    }
+  }
+  const updated = summarize(summary.elapsed);
+  onDone(updated);
+  return updated;
 }
 
 function renderLegend(summary) {
