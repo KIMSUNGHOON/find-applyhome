@@ -12,6 +12,7 @@ FULL_REFRESH_COOLDOWN = 10 * 60
 UNIT_LOCK_TTL = 30
 REDIS_TIMEOUT = 2.0
 CIRCUIT_BREAKER_SECONDS = 60.0
+UNIT_STATUSES = frozenset({"info", "empty", "error"})
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,8 @@ def _refresh_due(unit: dict, now: int) -> bool:
     last_error_at = int(unit.get("last_error_at") or 0)
     if last_error_at:
         return now - last_error_at >= DAY_SECONDS
+    if unit.get("status") == "info":
+        return now - int(unit.get("checked_at") or 0) >= TOPOLOGY_MAX_AGE
     if unit.get("status") in {"empty", "error"}:
         return now - int(unit.get("checked_at") or 0) >= DAY_SECONDS
     return False
@@ -98,7 +101,7 @@ def assemble_snapshot(raw: Mapping[str, str], now: int) -> Snapshot:
     due = []
     for field, (dong, ho) in expected_fields.items():
         unit = fields.get(field)
-        if not unit:
+        if not unit or unit.get("status") not in UNIT_STATUSES:
             missing.append({"dong": dong, "ho": ho})
             continue
         units.append(unit)

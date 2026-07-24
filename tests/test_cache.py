@@ -73,6 +73,18 @@ class SnapshotPolicyTest(unittest.TestCase):
         self.assertEqual(result.payload["cache"], "stale")
         self.assertEqual(result.payload["refresh"]["units"], [{"dong": "101", "ho": "201"}])
 
+    def test_info는_topology와_독립적으로_7일마다_재확인한다(self):
+        result = _cache.assemble_snapshot(complete_raw("info", NOW - WEEK), NOW)
+        self.assertEqual(result.payload["cache"], "stale")
+        self.assertEqual(result.payload["refresh"]["units"], [{"dong": "101", "ho": "201"}])
+
+    def test_허용되지_않은_호실_상태는_partial로_복구한다(self):
+        result = _cache.assemble_snapshot(complete_raw("unknown"), NOW)
+        self.assertEqual(result.payload["cache"], "partial")
+        self.assertFalse(result.payload["complete"])
+        self.assertEqual(result.payload["units"], [])
+        self.assertEqual(result.payload["refresh"]["units"], [{"dong": "101", "ho": "201"}])
+
     def test_최근_재확인_실패는_24시간_자동_재시도를_막는다(self):
         raw = complete_raw("info", NOW - WEEK)
         field = _cache.unit_field("101", "201")
