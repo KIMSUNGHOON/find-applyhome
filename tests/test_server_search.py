@@ -61,6 +61,12 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("청약홈 미계약 세대 스캐너", raw.decode("utf-8"))
 
+    def test_cache_module을_javascript로_준다(self):
+        url = f"http://127.0.0.1:{self.port}/cache.mjs"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            self.assertEqual(response.headers.get_content_type(), "text/javascript")
+            self.assertIn("selectUnitJobs", response.read().decode("utf-8"))
+
     def test_없는_경로는_404다(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.get("/api/nope")
