@@ -2,6 +2,7 @@ import json
 import pathlib
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "api"))
@@ -139,7 +140,39 @@ class FakeTransport:
         return result
 
 
+class FakeResponse:
+    def __init__(self, payload):
+        self.payload = json.dumps(payload).encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        return False
+
+    def read(self):
+        return self.payload
+
+
 class PersistenceTest(unittest.TestCase):
+    def test_result_없는_REST_응답은_회로를_차단한다(self):
+        clock = iter([10.0, 10.0, 20.0])
+        with patch.object(_cache.urllib.request, "urlopen",
+                          return_value=FakeResponse([{}])) as urlopen:
+            transport = _cache.UpstashTransport(
+                "https://redis.example", "secret", monotonic=lambda: next(clock))
+            with self.assertRaises(_cache.CacheUnavailable):
+                transport.pipeline([["PING"]])
+            with self.assertRaises(_cache.CacheUnavailable):
+                transport.pipeline([["PING"]])
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://redis.example/pipeline")
+        self.assertEqual(request.data, b'[["PING"]]')
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], _cache.REDIS_TIMEOUT)
+        self.assertEqual(urlopen.call_count, 1)
+
     def test_hash를_읽고_TTL을_연장한다(self):
         raw = complete_raw()
         flat = [part for item in raw.items() for part in item]
@@ -162,6 +195,14 @@ class PersistenceTest(unittest.TestCase):
         saved = json.loads(commands[0][3])
         self.assertEqual(saved["checked_at"], NOW)
         self.assertEqual(commands[1], ["EXPIRE", "scan:v1:1:2", _cache.CACHE_TTL])
+
+    def test_허용되지_않은_호실_상태는_저장하지_않는다(self):
+        transport = FakeTransport()
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        written = store.write_unit("1", "2", {"dong": "101", "ho": "201",
+                                                "status": "unknown", "fields": {}})
+        self.assertFalse(written)
+        self.assertEqual(transport.calls, [])
 
     def test_환경변수_둘_중_하나라도_없으면_비활성화한다(self):
         self.assertIsNone(_cache.CacheStore.from_env({}))

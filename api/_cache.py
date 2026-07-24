@@ -44,7 +44,7 @@ def _rest_pipeline(url: str, token: str, commands: Sequence[Sequence[object]],
         raise CacheUnavailable("Redis pipeline 응답 형식이 올바르지 않습니다.")
     values = []
     for item in decoded:
-        if not isinstance(item, dict) or "error" in item:
+        if not isinstance(item, dict) or "error" in item or "result" not in item:
             raise CacheUnavailable("Redis 명령 실행에 실패했습니다.")
         values.append(item.get("result"))
     return values
@@ -267,4 +267,6 @@ class CacheStore:
     def write_unit(self, hm, pb, unit):
         clean = {key: value for key, value in unit.items()
                  if key in {"dong", "ho", "status", "fields"}}
+        if clean.get("status") not in UNIT_STATUSES:
+            return False
         return self._write(hm, pb, unit_field(clean["dong"], clean["ho"]), clean)
