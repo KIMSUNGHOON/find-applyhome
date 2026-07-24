@@ -59,7 +59,7 @@ def scan_complex(
         on_event("error", {"message": "이 단지는 아직 분양권 정보가 등록되지 않았습니다."})
         return
 
-    on_event("meta", {"total": len(jobs), "dongs": meta_dongs})
+    on_event("meta", {"total": len(jobs), "dongs": meta_dongs, "supply": _supply(client, hm, pb)})
 
     tally = {"info": 0, "empty": 0, "error": 0}
     done_count = 0
@@ -107,3 +107,28 @@ def scan_complex(
             "elapsed": round(time.monotonic() - started, 1),
         },
     )
+
+
+def _supply(client, hm: str, pb: str) -> list[dict] | None:
+    """공고에서 타입별 공급세대수를 가져온다.
+
+    공고는 부가 정보다. 어떤 이유로 실패하든 None 을 돌려주고 스캔은 계속한다.
+    """
+    try:
+        types = client.fetch_pblanc_supply(hm, pb)
+    except Exception:
+        return None
+    if not types:
+        return None
+    return [
+        {
+            "type": t.house_type,
+            "short": grid.short_type(t.house_type),
+            "net_area": grid.net_area(t.house_type),
+            "area": t.area,
+            "general": t.general,
+            "special": t.special,
+            "total": t.total,
+        }
+        for t in types
+    ]

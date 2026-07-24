@@ -35,6 +35,9 @@ class FakeClient:
             return applyhome.UnitDetail(dong_name, ho_no, "empty", {})
         return applyhome.UnitDetail(dong_name, ho_no, "info", {"주택형": "084.9721"})
 
+    def fetch_pblanc_supply(self, hm, pb):
+        return getattr(self, "_supply", [])
+
 
 def collect(client, **kwargs):
     events = []
@@ -125,6 +128,55 @@ class StopTest(unittest.TestCase):
         )
         events = collect(client, stop=stop)
         self.assertNotIn("done", [name for name, _ in events])
+
+
+class SupplyInMetaTest(unittest.TestCase):
+    def _client(self, supply):
+        client = FakeClient(
+            dongs=[applyhome.Dong(1, "101")],
+            hos={1: [applyhome.Ho(1, "201")]},
+        )
+        client._supply = supply
+        return client
+
+    def test_공고_정보가_meta에_실린다(self):
+        client = self._client([
+            applyhome.SupplyType("084.8422A", "116.9496", 22, 23, 45),
+        ])
+        events = collect(client)
+        supply = events[0][1]["supply"]
+        self.assertEqual(len(supply), 1)
+        self.assertEqual(supply[0]["type"], "084.8422A")
+        self.assertEqual(supply[0]["general"], 22)
+        self.assertEqual(supply[0]["special"], 23)
+        self.assertEqual(supply[0]["total"], 45)
+
+    def test_축약과_전용면적이_함께_실린다(self):
+        client = self._client([
+            applyhome.SupplyType("084.8422A", "116.9496", 22, 23, 45),
+        ])
+        supply = collect(client)[0][1]["supply"]
+        self.assertEqual(supply[0]["short"], "84A")
+        self.assertEqual(supply[0]["net_area"], "84.8422")
+        self.assertEqual(supply[0]["area"], "116.9496")
+
+    def test_공고를_못_얻으면_None이다(self):
+        events = collect(self._client([]))
+        self.assertIsNone(events[0][1]["supply"])
+
+    def test_공고_조회가_터져도_스캔은_계속된다(self):
+        class Broken(FakeClient):
+            def fetch_pblanc_supply(self, hm, pb):
+                raise RuntimeError("공고 서버 오류")
+
+        client = Broken(
+            dongs=[applyhome.Dong(1, "101")],
+            hos={1: [applyhome.Ho(1, "201")]},
+        )
+        events = collect(client)
+        self.assertEqual(events[0][0], "meta")
+        self.assertIsNone(events[0][1]["supply"])
+        self.assertEqual(events[-1][0], "done")
 
 
 if __name__ == "__main__":
