@@ -268,6 +268,32 @@ class CacheIntegrationTest(unittest.TestCase):
         self.assertEqual(body["cache"], "disabled")
         self.assertTrue(body["refresh"]["all_units"])
 
+    def test_cache_조회_예외은_disabled로_직접_조회를_지시한다(self):
+        def broken_read(hm, pb, request_full=False):
+            raise RuntimeError("redis secret detail")
+
+        self.cache.read_snapshot = broken_read
+        status, body = _lib.cache_snapshot(q(hm="1", pb="2"))
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            body,
+            {
+                "cache": "disabled",
+                "complete": False,
+                "checked_at": None,
+                "meta": None,
+                "units": [],
+                "refresh": {
+                    "topology": True,
+                    "supply": True,
+                    "all_units": True,
+                    "units": [],
+                },
+                "full_refresh": {"allowed": True, "retry_after": 0},
+            },
+        )
+        self.assertNotIn("secret", str(body))
+
     def test_dongs가_서버에서_받은_값을_write_through한다(self):
         original = applyhome.list_dongs
         applyhome.list_dongs = lambda hm, pb: [applyhome.Dong(1, "101")]
@@ -294,6 +320,30 @@ class CacheIntegrationTest(unittest.TestCase):
             applyhome.list_dongs = original
         self.assertEqual(status, 200)
         self.assertEqual(body["dongs"], [{"sn": 1, "name": "101"}])
+
+    def test_pblanc_조회_실패는_cache를_쓰지_않는다(self):
+        original = applyhome.fetch_pblanc_supply
+        applyhome.fetch_pblanc_supply = lambda hm, pb: (_ for _ in ()).throw(
+            RuntimeError("상류 실패")
+        )
+        try:
+            status, body = _lib.pblanc(q(hm="1", pb="2"))
+        finally:
+            applyhome.fetch_pblanc_supply = original
+        self.assertEqual(status, 200)
+        self.assertIsNone(body["supply"])
+        self.assertFalse(any(call[0] == "write_supply" for call in self.cache.calls))
+
+    def test_pblanc_성공_빈_결과는_None을_cache에_쓴다(self):
+        original = applyhome.fetch_pblanc_supply
+        applyhome.fetch_pblanc_supply = lambda hm, pb: []
+        try:
+            status, body = _lib.pblanc(q(hm="1", pb="2"))
+        finally:
+            applyhome.fetch_pblanc_supply = original
+        self.assertEqual(status, 200)
+        self.assertIsNone(body["supply"])
+        self.assertIn(("write_supply", "1", "2", None), self.cache.calls)
 
     def test_unit_잠금_경합과_기존값은_200_refreshing이다(self):
         self.cache.lock = _cache.LockResult("busy")

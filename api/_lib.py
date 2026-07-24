@@ -162,7 +162,7 @@ def pblanc(query: dict) -> tuple[int, dict]:
     try:
         types = applyhome.fetch_pblanc_supply(hm, pb)
     except Exception:
-        types = []
+        return 200, {"supply": None}
     supply = [
         {
             "type": item.house_type,
@@ -200,8 +200,26 @@ def cache_snapshot(query: dict) -> tuple[int, dict]:
             },
             "full_refresh": {"allowed": True, "retry_after": 0},
         }
-    body = CACHE.read_snapshot(hm, pb, request_full=request_full)
-    if request_full or (body["cache"] == "stale" and body["refresh"]["all_units"]):
+    try:
+        body = CACHE.read_snapshot(hm, pb, request_full=request_full)
+        cache_state = body["cache"]
+        refresh_all = body["refresh"]["all_units"]
+    except Exception:
+        return 200, {
+            "cache": "disabled",
+            "complete": False,
+            "checked_at": None,
+            "meta": None,
+            "units": [],
+            "refresh": {
+                "topology": True,
+                "supply": True,
+                "all_units": True,
+                "units": [],
+            },
+            "full_refresh": {"allowed": True, "retry_after": 0},
+        }
+    if request_full or (cache_state == "stale" and refresh_all):
         body["full_refresh"] = (
             _cache_call("claim_full_refresh", hm, pb)
             or {"allowed": True, "retry_after": 0}
