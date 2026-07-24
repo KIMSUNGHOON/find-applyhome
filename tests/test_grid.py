@@ -46,5 +46,32 @@ class BuildGridTest(unittest.TestCase):
         self.assertEqual(len(result["cells"]), 119)
 
 
+class ShortTypeTest(unittest.TestCase):
+    def test_전용면적_정수부와_타입코드를_붙인다(self):
+        self.assertEqual(grid.short_type("084.8422A"), "84A")
+        self.assertEqual(grid.short_type("039.7700A"), "39A")
+
+    def test_타입코드가_없으면_숫자만_남는다(self):
+        self.assertEqual(grid.short_type("046.8700"), "46")
+        self.assertEqual(grid.short_type("114.2100"), "114")
+
+    def test_두글자_타입코드도_유지한다(self):
+        self.assertEqual(grid.short_type("059.9800A1"), "59A1")
+
+    def test_형식이_다르면_입력을_그대로_돌려준다(self):
+        self.assertEqual(grid.short_type("알수없음"), "알수없음")
+        self.assertEqual(grid.short_type(""), "")
+
+
+class NetAreaTest(unittest.TestCase):
+    def test_앞자리_0을_버린_전용면적을_뽑는다(self):
+        self.assertEqual(grid.net_area("084.8422A"), "84.8422")
+        self.assertEqual(grid.net_area("046.8700"), "46.8700")
+        self.assertEqual(grid.net_area("114.2100"), "114.2100")
+
+    def test_형식이_다르면_빈_문자열이다(self):
+        self.assertEqual(grid.net_area("알수없음"), "")
+
+
 if __name__ == "__main__":
     unittest.main()
