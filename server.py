@@ -16,6 +16,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import applyhome
+import grid
 import scanner
 
 STATIC_DIR = pathlib.Path(__file__).resolve().parent / "static"
@@ -36,25 +37,30 @@ def complex_to_dict(item: applyhome.Complex) -> dict:
 
 
 CSV_HEADER = (
-    "동", "호", "판정", "주택형", "공급유형", "공고일",
+    "동", "호", "타입", "판정", "주택형", "공급유형", "공고일",
     "당첨자 발표일", "계약체결일", "입주예정", "전매제한", "분양금액(만원)",
 )
 STATUS_LABEL = {"info": "정보있음", "empty": "정보없음", "error": "조회실패"}
 
 
 def build_csv(units: list[dict]) -> str:
-    """엑셀에서 바로 열리도록 UTF-8 BOM을 붙인 CSV 를 만든다."""
+    """엑셀에서 바로 열리도록 UTF-8 BOM을 붙인 CSV 를 만든다.
+
+    '타입' 은 주택형을 축약한 값이다. 정보없음 세대는 청약홈이 주택형을 주지 않으므로 빈칸이 된다.
+    """
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(CSV_HEADER)
     for unit in units:
         fields = unit.get("fields") or {}
+        house_type = fields.get("주택형", "")
         writer.writerow(
             [
                 unit.get("dong", ""),
                 unit.get("ho", ""),
+                grid.short_type(house_type) if house_type else "",
                 STATUS_LABEL.get(unit.get("status", ""), unit.get("status", "")),
-                *(fields.get(key, "") for key in CSV_HEADER[3:]),
+                *(fields.get(key, "") for key in CSV_HEADER[4:]),
             ]
         )
     return "﻿" + buffer.getvalue()

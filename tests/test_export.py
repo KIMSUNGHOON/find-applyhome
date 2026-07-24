@@ -12,7 +12,7 @@ UNITS = [
         "ho": "201",
         "status": "info",
         "fields": {
-            "주택형": "084.9721",
+            "주택형": "084.9721A",
             "공급유형": "특별공급",
             "공고일": "2025.03.14",
             "당첨자 발표일": "2025.03.25",
@@ -35,8 +35,18 @@ class BuildCsvTest(unittest.TestCase):
         header = server.build_csv(UNITS).lstrip("﻿").splitlines()[0]
         self.assertEqual(
             header,
-            "동,호,판정,주택형,공급유형,공고일,당첨자 발표일,계약체결일,입주예정,전매제한,분양금액(만원)",
+            "동,호,타입,판정,주택형,공급유형,공고일,당첨자 발표일,계약체결일,입주예정,전매제한,분양금액(만원)",
         )
+
+    def test_정보있음_행은_주택형에서_축약한_타입이_들어간다(self):
+        lines = server.build_csv(UNITS).lstrip("﻿").strip().splitlines()
+        self.assertEqual(lines[1].split(",")[2], "84A")
+
+    def test_타입은_호와_판정_사이다(self):
+        header = server.build_csv(UNITS).lstrip("﻿").splitlines()[0].split(",")
+        self.assertEqual(header[1], "호")
+        self.assertEqual(header[2], "타입")
+        self.assertEqual(header[3], "판정")
 
     def test_세대수만큼_행이_나온다(self):
         lines = server.build_csv(UNITS).lstrip("﻿").strip().splitlines()
@@ -48,9 +58,9 @@ class BuildCsvTest(unittest.TestCase):
         self.assertIn("정보없음", lines[2])
         self.assertIn("조회실패", lines[3])
 
-    def test_정보없음_행은_상세칸이_비어있다(self):
+    def test_정보없음_행은_타입만_있고_상세칸은_비어있다(self):
         lines = server.build_csv(UNITS).lstrip("﻿").strip().splitlines()
-        self.assertEqual(lines[2], "101,305,정보없음,,,,,,,,")
+        self.assertEqual(lines[2], "101,305,,정보없음,,,,,,,,")
 
     def test_쉼표가_든_값은_따옴표로_감싼다(self):
         body = server.build_csv(UNITS)
