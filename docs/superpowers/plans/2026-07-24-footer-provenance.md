@@ -222,4 +222,3 @@ Replace `HEAD` with the committed full SHA before executing. Expected: Vercel st
 - Footer remains secondary, responsive, keyboard-visible, and consistent with the existing visual system.
 - 41 Node tests and 124 Python tests pass; 2 live Python tests remain intentionally skipped.
 - Vercel build succeeds or the precise external blocker is recorded.
-

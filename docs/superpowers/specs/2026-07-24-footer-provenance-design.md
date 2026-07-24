@@ -55,4 +55,3 @@
 - footer가 기존 caption 계층과 모바일 줄바꿈 구조를 사용하는지 확인한다.
 - inline module과 `public/cache.mjs` 문법, 전체 Node/Python 회귀 테스트, 비밀정보 scan을 다시 실행한다.
 - Vercel Preview가 SSO 보호 상태라 자동 렌더 확인이 불가능하면 그 제약을 최종 보고서에 명시한다.
-
