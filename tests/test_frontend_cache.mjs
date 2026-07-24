@@ -18,6 +18,35 @@ const snapshot = {
 
 const indexHtml = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 
+test("footer는 출처 저장소 개발자를 안전한 외부 링크로 표시한다", () => {
+  const start = indexHtml.indexOf('<footer class="caption">');
+  const end = indexHtml.indexOf("</footer>", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const footer = indexHtml.slice(start, end + "</footer>".length);
+
+  const expected = [
+    ["https://www.applyhome.co.kr/rs/rsa/selectResaleListView.do",
+      "청약홈 「분양권 정보(전매제한 등)」"],
+    ["https://github.com/KIMSUNGHOON/find-applyhome",
+      "KIMSUNGHOON/find-applyhome"],
+    ["https://github.com/KIMSUNGHOON",
+      "Seonghun Kim · @KIMSUNGHOON"],
+  ];
+
+  for (const [href, label] of expected) {
+    const escaped = href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const anchor = footer.match(new RegExp(`<a[^>]+href="${escaped}"[^>]*>`));
+    assert.ok(anchor, `missing footer link: ${href}`);
+    assert.match(anchor[0], /target="_blank"/);
+    assert.match(anchor[0], /rel="noopener noreferrer"/);
+    assert.match(footer, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+
+  assert.match(footer, /공개 데이터를 조회합니다\. 참고용으로만 활용하세요\./);
+  assert.doesNotMatch(footer, /sunghoonk@gmail\.com/);
+});
+
 function functionSource(name) {
   const marker = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`);
   const match = marker.exec(indexHtml);
