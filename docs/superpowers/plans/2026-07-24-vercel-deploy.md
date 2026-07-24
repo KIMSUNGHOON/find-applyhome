@@ -17,7 +17,7 @@
 - **로컬과 배포본이 같은 코드를 탄다.** `server.py` 와 `api/*.py` 가 모두 `api/_lib.py` 를 호출한다. 로직을 복제하지 않는다.
 - **프론트엔드는 한 파일이다.** `public/index.html` 을 로컬 서버도 그대로 서빙한다.
 - Vercel 규약: `api/` 안의 `.py` 는 `BaseHTTPRequestHandler` 를 상속한 **`handler`** 클래스를 정의해야 하고, **`_` 로 시작하는 파일은 함수로 변환되지 않는다.**
-- 청약홈 호출 규약은 그대로다 — 브라우저에서 **동시 4개, 요청 간 0.1초**.
+- 청약홈 호출 규약은 브라우저에서 **동시 3개, 요청 완료 후 다음 요청**이다. 고정 타이머는 백그라운드 탭에서 과도하게 제한되므로 두지 않는다.
 - `/api/unit` 만 개별 실패 시 `200` 과 `{"status": "error"}` 를 반환한다. 나머지는 실패 시 `502`.
 
 ## File Structure
@@ -728,16 +728,18 @@ git commit -m "feat: Vercel 진입점과 로컬 라우팅을 _lib 위로 통합"
 - [ ] **Step 1: 스캔 관련 코드를 새 루프로 교체한다**
 
 `el("scan-button").addEventListener("click", ...)` 블록 전체부터 `finishScan` 함수 끝까지를 아래로 교체한다.
-`EventSource` 를 쓰지 않고 개별 요청을 동시 4개로 돌린다:
+`EventSource` 를 쓰지 않고 개별 요청을 동시 3개로 돌린다:
 
 ```javascript
-const CONCURRENCY = 4;
-const REQUEST_GAP_MS = 100;
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// 청약홈이 공공 사이트라 동시에 이만큼만 부른다.
+// 요청이 끝나야 다음이 나가므로, 청약홈이 느려지면 스캔도 자동으로 함께 느려진다.
+//
+// setTimeout 으로 요청 간격을 두지 않는다. 브라우저는 백그라운드 탭의 타이머를
+// 1초로 묶어버려서, 사용자가 다른 탭을 보는 동안 스캔이 네 배 느려진다(실측 15초 → 62초).
+// 요청 자체가 0.17초쯤 걸리므로 동시 수 제한만으로 충분히 완만하다.
+const CONCURRENCY = 3;
 
 // 작업 목록을 동시 CONCURRENCY 개로 처리한다. 동·호 목록 조회와 세대 조회가 같은 러너를 쓴다.
-// 청약홈이 공공 사이트라 워커마다 요청 사이에 REQUEST_GAP_MS 를 둔다.
 async function runPool(items, worker) {
   const results = new Array(items.length);
   let next = 0;
@@ -745,8 +747,6 @@ async function runPool(items, worker) {
     while (true) {
       const index = next++;
       if (index >= items.length || state.aborted) return;
-      await sleep(REQUEST_GAP_MS);
-      if (state.aborted) return;
       results[index] = await worker(items[index], index);
     }
   }
@@ -1025,7 +1025,7 @@ class LiveTest(unittest.TestCase):
         hos = applyhome.list_hos(hm, pb, target.sn)
         self.assertEqual(len(hos), 119, "101동 세대 수가 119가 아닙니다")
 
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             units = list(pool.map(
                 lambda ho: applyhome.fetch_detail(hm, pb, "101", ho.no), hos))
 
