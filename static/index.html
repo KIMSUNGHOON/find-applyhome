@@ -1,4 +1,416 @@
 <!doctype html>
+<html lang="ko">
+<head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>청약홈 미계약 세대 스캐너</title>
-<p>준비 중</p>
+<style>
+  :root { color-scheme: light dark; --line:#d6d9de; --dim:#6b7280; --empty:#e8590c; --info:#adb5bd; --err:#c92a2a; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+         margin: 0 auto; padding: 24px; max-width: 1100px; line-height: 1.5; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 20px; }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+  legend { font-size: 13px; color: var(--dim); padding: 0 6px; }
+  input, select, button { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; }
+  button { cursor: pointer; }
+  button[disabled] { opacity: .5; cursor: default; }
+  #results { margin-top: 12px; max-height: 260px; overflow-y: auto; }
+  #results label { display: block; padding: 7px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  #results .meta { color: var(--dim); font-size: 12px; margin-left: 6px; }
+  #notice { background: #fff4e6; border: 1px solid #ffd8a8; color: #8a5a1b; padding: 10px 12px;
+            border-radius: 8px; font-size: 13px; margin-bottom: 14px; }
+  @media (prefers-color-scheme: dark) { #notice { background:#3a2c17; border-color:#6b5220; color:#f0c992; } }
+  progress { width: 320px; vertical-align: middle; }
+  .hide { display: none; }
+  .status { color: var(--dim); font-size: 13px; }
+
+  .dong { margin: 20px 0; }
+  .dong h3 { font-size: 15px; margin: 0 0 8px; }
+  table.grid { border-collapse: collapse; font-size: 11px; }
+  table.grid th { color: var(--dim); font-weight: 400; padding: 2px 5px; }
+  table.grid td { padding: 1px; }
+  /* 격자 칸은 색으로만 구분한다. 26px 에 네 자리 호수는 들어가지 않는다.
+     호수는 마우스를 올리면 title 로 뜨고, 정보없음 목록 표에도 그대로 나온다. */
+  .cell { width: 26px; height: 22px; border: 1px solid var(--line); border-radius: 3px;
+          background: transparent; cursor: pointer; font-size: 10px; color: transparent;
+          overflow: hidden; padding: 0; }
+  .cell.info  { background: var(--info); }
+  .cell.empty { background: var(--empty); }
+  .cell.error { background: var(--err); }
+  .flat { display: flex; flex-wrap: wrap; gap: 3px; }
+  .flat .cell { width: 46px; color: inherit; overflow: visible; }
+  .flat .cell.info, .flat .cell.empty, .flat .cell.error { color: #fff; }
+  .legend { font-size: 12px; color: var(--dim); margin-top: 8px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 2px;
+            vertical-align: -1px; margin: 0 3px 0 10px; }
+  /* 상세는 화면 아래에 붙되, 격자를 가리지 않도록 여러 열로 압축한다. */
+  #detail:not(:empty) { position: sticky; bottom: 0; background: Canvas; font-size: 13px;
+            border-top: 1px solid var(--line); padding: 8px 0; max-height: 34vh; overflow-y: auto; }
+  #detail .fields { display: grid; gap: 1px 20px; margin-top: 4px;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+  #detail .fields div span { color: var(--dim); display: inline-block; min-width: 108px; }
+  table.list { border-collapse: collapse; font-size: 13px; margin-top: 8px; width: 100%; }
+  table.list th, table.list td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  table.list th { color: var(--dim); font-weight: 400; }
+</style>
+</head>
+<body>
+
+<h1>청약홈 미계약 세대 스캐너</h1>
+<div class="sub">단지를 고르면 전 동·전 호의 분양권 정보 등록 여부를 한 번에 확인합니다.</div>
+
+<fieldset>
+  <legend>1. 단지 찾기</legend>
+  <form id="search-form">
+    <input id="q" placeholder="단지명 (예: 상봉 센트럴)" size="28" autofocus>
+    <select id="area">
+      <option value="">시도 전체</option>
+    </select>
+    <button type="submit">검색</button>
+  </form>
+  <div id="results"></div>
+  <div id="search-status" class="status"></div>
+  <button id="more" class="hide" type="button">더 보기</button>
+</fieldset>
+
+<fieldset>
+  <legend>2. 스캔</legend>
+  <button id="scan-button" disabled>전체 스캔</button>
+  <button id="stop-button" class="hide">중단</button>
+  <span id="progress" class="status"></span>
+</fieldset>
+
+<div id="notice" class="hide">
+  이 결과는 청약홈에 분양권 정보가 등록되지 않은 세대입니다.
+  미계약·부적격 세대일 가능성이 높으나, 사업주체의 등록 지연일 수도 있으므로 참고용으로만 활용하세요.
+</div>
+
+<div id="grids"></div>
+<div id="empty-list"></div>
+<div id="detail"></div>
+
+<script>
+const AREAS = ["강원","경기","경남","경북","광주","대구","대전","부산","서울","세종",
+               "울산","인천","전남","전북","제주","충남","충북"];
+
+const el = (id) => document.getElementById(id);
+const state = {
+  complex: null, meta: null, units: new Map(), token: null, source: null,
+  search: { name: "", area: "", page: 1, loaded: 0, total: 0 },
+};
+
+AREAS.forEach((name) => {
+  const option = document.createElement("option");
+  option.value = option.textContent = name;
+  el("area").append(option);
+});
+
+el("search-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  state.search = {
+    name: el("q").value.trim(), area: el("area").value, page: 1, loaded: 0, total: 0,
+  };
+  el("results").innerHTML = "";
+  el("more").classList.add("hide");
+  loadPage();
+});
+
+el("more").addEventListener("click", () => {
+  state.search.page += 1;
+  loadPage();
+});
+
+async function loadPage() {
+  const { name, area, page } = state.search;
+  el("search-status").textContent = "검색 중…";
+  el("more").disabled = true;
+  try {
+    const params = new URLSearchParams({ name, area, page: String(page) });
+    const response = await fetch("/api/search?" + params);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.message || "검색 실패");
+    renderResults(body);
+  } catch (error) {
+    el("search-status").textContent = "검색에 실패했습니다: " + error.message;
+  } finally {
+    el("more").disabled = false;
+  }
+}
+
+function renderResults(body) {
+  state.search.total = body.total;
+  state.search.loaded += body.complexes.length;
+
+  if (!state.search.loaded) {
+    el("search-status").textContent = "검색 결과가 없습니다.";
+    el("more").classList.add("hide");
+    return;
+  }
+  el("search-status").textContent = `${state.search.loaded}건 표시 (전체 ${body.total}건)`;
+  el("more").classList.toggle("hide", state.search.loaded >= body.total);
+
+  body.complexes.forEach((item) => {
+    const label = document.createElement("label");
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "complex";
+    radio.addEventListener("change", () => {
+      state.complex = item;
+      el("scan-button").disabled = false;
+    });
+    label.append(radio, " " + item.name);
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = `공고 ${item.notice_date} · 당첨발표 ${item.winner_date} · ${item.house_manage_no}`;
+    label.append(meta);
+    el("results").append(label);
+  });
+}
+
+el("scan-button").addEventListener("click", () => {
+  if (!state.complex) return;
+  state.meta = null;
+  state.units = new Map();
+  state.token = null;
+  el("grids").innerHTML = "";
+  el("empty-list").innerHTML = "";
+  el("detail").innerHTML = "";
+  el("notice").classList.add("hide");
+  el("scan-button").disabled = true;
+  el("stop-button").classList.remove("hide");
+
+  const params = new URLSearchParams({
+    hm: state.complex.house_manage_no,
+    pb: state.complex.pblanc_no,
+  });
+  const source = new EventSource("/api/scan?" + params);
+  state.source = source;
+
+  source.addEventListener("meta", (event) => {
+    state.meta = JSON.parse(event.data);
+    el("progress").textContent = `0 / ${state.meta.total}`;
+    onMeta(state.meta);
+  });
+
+  source.addEventListener("unit", (event) => {
+    const unit = JSON.parse(event.data);
+    state.units.set(unit.dong + "-" + unit.ho, unit);
+    onUnit(unit);
+    el("progress").textContent = `${state.units.size} / ${state.meta.total}`;
+  });
+
+  source.addEventListener("done", (event) => {
+    const summary = JSON.parse(event.data);
+    state.token = summary.token;
+    el("progress").textContent =
+      `완료 · ${summary.total}세대 중 정보없음 ${summary.empty}건` +
+      (summary.error ? ` · 실패 ${summary.error}건` : "") +
+      ` (${summary.elapsed}초)`;
+    finishScan();
+    onDone(summary);
+  });
+
+  source.addEventListener("error", (event) => {
+    if (event.data) {
+      const payload = JSON.parse(event.data);
+      el("progress").textContent = payload.message;
+    } else if (state.units.size === 0) {
+      el("progress").textContent = "서버 연결이 끊겼습니다.";
+    }
+    finishScan();
+  });
+});
+
+el("stop-button").addEventListener("click", () => {
+  el("progress").textContent = `중단됨 · ${state.units.size}세대까지 조회`;
+  finishScan();
+});
+
+function finishScan() {
+  if (state.source) { state.source.close(); state.source = null; }
+  el("scan-button").disabled = false;
+  el("stop-button").classList.add("hide");
+}
+
+function cellId(dong, ho) { return `c-${dong}-${ho}`; }
+
+function makeCell(dong, ho) {
+  const button = document.createElement("button");
+  button.className = "cell";
+  button.id = cellId(dong, ho);
+  button.textContent = ho;
+  button.title = `${dong}동 ${ho}호`;
+  button.addEventListener("click", () => showDetail(dong, ho));
+  return button;
+}
+
+function onMeta(meta) {
+  el("notice").classList.remove("hide");
+  const container = el("grids");
+  meta.dongs.forEach((dong) => {
+    const box = document.createElement("div");
+    box.className = "dong";
+    const title = document.createElement("h3");
+    title.textContent = `${dong.name}동 · ${dong.hos.length}세대`;
+    box.append(title);
+    box.append(dong.grid ? buildGridTable(dong) : buildFlatList(dong));
+    container.append(box);
+  });
+}
+
+function buildGridTable(dong) {
+  const table = document.createElement("table");
+  table.className = "grid";
+  const head = table.insertRow();
+  head.append(document.createElement("th"));   // 층 라벨 칸 자리
+  dong.grid.lines.forEach((line) => {
+    const th = document.createElement("th");
+    th.textContent = line;
+    head.append(th);
+  });
+  const byFloor = new Map();
+  Object.entries(dong.grid.cells).forEach(([ho, [floor, line]]) => {
+    if (!byFloor.has(floor)) byFloor.set(floor, new Map());
+    byFloor.get(floor).set(line, ho);
+  });
+  dong.grid.floors.forEach((floor) => {
+    const row = table.insertRow();
+    const th = document.createElement("th");
+    th.textContent = floor + "F";
+    row.append(th);
+    dong.grid.lines.forEach((line) => {
+      const cell = row.insertCell();
+      const ho = byFloor.get(floor)?.get(line);
+      if (ho) cell.append(makeCell(dong.name, ho));
+    });
+  });
+  return table;
+}
+
+function buildFlatList(dong) {
+  const box = document.createElement("div");
+  box.className = "flat";
+  dong.hos.forEach((ho) => box.append(makeCell(dong.name, ho)));
+  return box;
+}
+
+function onUnit(unit) {
+  const cell = document.getElementById(cellId(unit.dong, unit.ho));
+  if (cell) cell.classList.add(unit.status);
+}
+
+function onDone(summary) {
+  renderLegend(summary);
+  renderEmptyList();
+  renderActions(summary);
+}
+
+function renderActions(summary) {
+  if (state.token) {
+    el("empty-list").insertAdjacentHTML(
+      "afterbegin",
+      `<p><a href="/api/export?token=${state.token}" download>CSV로 내려받기</a></p>`
+    );
+  }
+  if (summary.error) renderRetry(summary);
+}
+
+function renderRetry(summary) {
+  const button = document.createElement("button");
+  button.textContent = `조회 실패 ${summary.error}건 다시 시도`;
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.textContent = "다시 시도하는 중…";
+    const failed = [...state.units.values()].filter((unit) => unit.status === "error");
+    for (const unit of failed) {
+      const params = new URLSearchParams({
+        hm: state.complex.house_manage_no,
+        pb: state.complex.pblanc_no,
+        dong: unit.dong,
+        ho: unit.ho,
+        token: state.token || "",
+      });
+      try {
+        const fresh = await (await fetch("/api/unit?" + params)).json();
+        state.units.set(fresh.dong + "-" + fresh.ho, fresh);
+        const cell = document.getElementById(cellId(fresh.dong, fresh.ho));
+        if (cell) {
+          cell.classList.remove("error", "info", "empty");
+          cell.classList.add(fresh.status);
+        }
+      } catch (error) {
+        // 이 세대는 그대로 두고 다음으로 넘어간다
+      }
+    }
+    const tally = { info: 0, empty: 0, error: 0 };
+    state.units.forEach((unit) => { tally[unit.status] = (tally[unit.status] || 0) + 1; });
+    const updated = { ...summary, ...tally };
+    renderLegend(updated);
+    renderEmptyList();
+    renderActions(updated);
+  });
+  el("empty-list").prepend(button);
+}
+
+function renderLegend(summary) {
+  document.querySelectorAll(".legend").forEach((node) => node.remove());
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  legend.innerHTML =
+    `<span class="swatch" style="background:var(--info)"></span>정보있음 ${summary.info}` +
+    `<span class="swatch" style="background:var(--empty)"></span>정보없음 ${summary.empty}` +
+    (summary.error ? `<span class="swatch" style="background:var(--err)"></span>조회실패 ${summary.error}` : "");
+  el("grids").append(legend);
+}
+
+// 정보없음 응답에는 값이 하나도 실려 오지 않는다 (라벨만 있고 주택형·공급유형 칸이 비어 있다).
+// 그래서 같은 동·같은 라인(호수 끝 두 자리)의 정보있음 세대에서 주택형을 빌려와 참고값으로 보여준다.
+function referenceType(dong, ho) {
+  if (ho.length < 3) return "";
+  const line = ho.slice(-2);
+  for (const unit of state.units.values()) {
+    if (unit.dong === dong && unit.status === "info" && unit.ho.slice(-2) === line) {
+      return unit.fields["주택형"] || "";
+    }
+  }
+  return "";
+}
+
+function renderEmptyList() {
+  const empties = [...state.units.values()]
+    .filter((unit) => unit.status === "empty")
+    .sort((a, b) => a.dong.localeCompare(b.dong) || Number(a.ho) - Number(b.ho));
+
+  if (!empties.length) {
+    el("empty-list").innerHTML = "<p>정보없음 세대가 없습니다.</p>";
+    return;
+  }
+  const rows = empties
+    .map((unit) => {
+      const type = referenceType(unit.dong, unit.ho);
+      return `<tr><td>${unit.dong}</td><td>${unit.ho}</td><td>${type}</td></tr>`;
+    })
+    .join("");
+  el("empty-list").innerHTML =
+    `<h3>정보없음 ${empties.length}세대</h3>` +
+    `<table class="list"><thead><tr><th>동</th><th>호</th><th>주택형(참고)</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table>`;
+}
+
+function showDetail(dong, ho) {
+  const unit = state.units.get(dong + "-" + ho);
+  if (!unit) return;
+  if (unit.status !== "info") {
+    const label = unit.status === "empty" ? "정보없음 (미계약·부적격 추정)" : "조회 실패";
+    el("detail").innerHTML = `<b>${dong}동 ${ho}호</b> — ${label}`;
+    return;
+  }
+  const rows = Object.entries(unit.fields)
+    .map(([key, value]) => `<div><span>${key}</span>${value || "-"}</div>`)
+    .join("");
+  el("detail").innerHTML = `<b>${dong}동 ${ho}호</b><div class="fields">${rows}</div>`;
+}
+</script>
+</body>
+</html>
