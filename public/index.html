@@ -161,7 +161,7 @@
 
 <div class="m-stripe"></div>
 
-<div class="wrap">
+<main class="wrap">
 
 <section class="band">
   <h1>청약홈 미계약 세대 스캐너</h1>
@@ -187,7 +187,8 @@
   <div class="row">
     <button id="scan-button" class="btn" disabled>Scan</button>
     <button id="stop-button" class="btn hide">Stop</button>
-    <span id="progress" class="status"></span>
+    <span id="progress" class="status" role="status" aria-live="polite" aria-atomic="true"></span>
+    <span id="cache-status" class="caption" role="status" aria-live="polite" aria-atomic="true"></span>
   </div>
 </section>
 
@@ -198,11 +199,11 @@
   </div>
 </section>
 
-<section class="band" id="summary-band"><div id="summary"></div></section>
-<section class="band"><div id="grids"></div></section>
-<section class="band"><div id="empty-list"></div></section>
+<section class="band" id="summary-band"><div id="summary" data-operation-region aria-busy="false"></div></section>
+<section class="band"><div id="grids" data-operation-region aria-busy="false"></div></section>
+<section class="band"><div id="empty-list" data-operation-region aria-busy="false"></div></section>
 
-</div>
+</main>
 
 <div id="detail"></div>
 
@@ -210,15 +211,22 @@
   청약홈 「분양권 정보(전매제한 등)」 페이지의 공개 데이터를 조회합니다. 참고용으로만 활용하세요.
 </footer>
 
-<script>
+<script type="module">
+import {
+  createOperationController, formatCheckedAt, resolveUnitRequest,
+  runCacheFirstRefresh, runExclusiveOperation, unitKey,
+} from "/cache.mjs";
+
 const AREAS = ["강원","경기","경남","경북","광주","대구","대전","부산","서울","세종",
                "울산","인천","전남","전북","제주","충남","충북"];
 
 const el = (id) => document.getElementById(id);
 const state = {
   complex: null, meta: null, units: new Map(), aborted: false,
+  cache: { status: "disabled", checkedAt: null },
   search: { name: "", area: "", page: 1, loaded: 0, total: 0 },
 };
+const operationController = createOperationController(setOperationBusy);
 
 // 주택형 "084.8422A" → 표기 "84A", 전용면적 "84.8422".
 // grid.py 의 short_type / net_area 와 같은 규칙이다. 한쪽만 고치면 화면 표기가 어긋난다.
@@ -294,11 +302,12 @@ function renderResults(body) {
     const radio = document.createElement("input");
     radio.type = "radio";
     radio.name = "complex";
+    radio.disabled = operationController.isBusy();
     radio.addEventListener("change", () => {
       document.querySelectorAll(".pick.on").forEach((n) => n.classList.remove("on"));
       label.classList.add("on");
       state.complex = item;
-      el("scan-button").disabled = false;
+      el("scan-button").disabled = operationController.isBusy();
     });
 
     const name = document.createElement("span");
@@ -340,104 +349,169 @@ async function runPool(items, worker) {
 async function getJson(path, params) {
   const response = await fetch(path + "?" + new URLSearchParams(params));
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.message || `요청 실패 (${response.status})`);
-  return body;
+  if (!response.ok && response.status !== 202) {
+    throw new Error(body.message || `요청 실패 (${response.status})`);
+  }
+  return { ...body, http_status: response.status };
 }
 
-el("scan-button").addEventListener("click", async () => {
-  if (!state.complex) return;
-  state.meta = null;
-  state.units = new Map();
-  state.aborted = false;
-  el("grids").innerHTML = "";
-  el("summary").innerHTML = "";
-  el("empty-list").innerHTML = "";
-  el("detail").innerHTML = "";
-  el("notice-band").classList.add("hide");
-  el("scan-button").disabled = true;
-  el("stop-button").classList.remove("hide");
-  el("progress").textContent = "동·호 목록을 불러오는 중…";
+async function fetchResolvedUnit(hm, pb, job) {
+  const previous = state.units.get(unitKey(job.dong, job.ho));
+  return resolveUnitRequest({
+    job,
+    previous,
+    loadUnit: () => getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho }),
+    loadSnapshot: () => getJson("/api/cache", { hm, pb }),
+    isAborted: () => state.aborted,
+  });
+}
 
-  const hm = state.complex.house_manage_no;
-  const pb = state.complex.pblanc_no;
-  const started = Date.now();
+async function fetchTopology(hm, pb) {
+  const { dongs } = await getJson("/api/dongs", { hm, pb });
+  if (!dongs.length) return { total: 0, dongs: [], supply: null };
+  const perDong = await runPool(dongs, (dong) =>
+    getJson("/api/hos", { hm, pb, sn: dong.sn })
+      .then((result) => ({ ...result, name: dong.name }))
+  );
+  const metaDongs = perDong.filter(Boolean).map((dong) => ({
+    name: dong.name, hos: dong.hos, grid: dong.grid,
+  }));
+  return {
+    total: metaDongs.reduce((sum, dong) => sum + dong.hos.length, 0),
+    dongs: metaDongs,
+    supply: null,
+  };
+}
 
-  try {
-    const { dongs } = await getJson("/api/dongs", { hm, pb });
-    if (!dongs.length) {
-      el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
-      finishScan();
-      return;
+function summarize(elapsed = "0.0") {
+  const tally = { info: 0, empty: 0, error: 0 };
+  state.units.forEach((unit) => {
+    tally[unit.status] = (tally[unit.status] || 0) + 1;
+  });
+  return { total: state.meta?.total || 0, ...tally, elapsed };
+}
+
+function completionStatus(summary) {
+  return `완료 · ${summary.total}세대 중 정보없음 ${summary.empty}건` +
+    (summary.error ? ` · 실패 ${summary.error}건` : "") +
+    ` (${summary.elapsed}초)`;
+}
+
+function renderStoredSnapshot(snapshot) {
+  renderCacheStatus(snapshot);
+  onMeta(state.meta);
+  state.units.forEach(onUnit);
+  onDone(summarize());
+  const checked = formatCheckedAt(snapshot.checked_at);
+  el("progress").textContent = checked
+    ? `저장된 결과 ${state.units.size} / ${state.meta.total} · 마지막 확인 ${checked}`
+    : `저장된 결과 ${state.units.size} / ${state.meta.total}`;
+}
+
+function renderCacheStatus(snapshot) {
+  const labels = {
+    disabled: "공유 캐시 없이 직접 조회",
+    miss: "저장된 결과 없음",
+    partial: "일부 데이터만 저장됨",
+    fresh: "저장된 결과",
+    stale: "저장된 결과 · 업데이트 필요",
+  };
+  const checked = formatCheckedAt(snapshot.checked_at);
+  el("cache-status").textContent =
+    `${labels[snapshot.cache] || ""}${checked ? ` · ${checked}` : ""}`;
+}
+
+async function scanComplex({ forceFull = false } = {}) {
+  if (!state.complex) return null;
+  return runExclusiveOperation(operationController, "scan", async (owner) => {
+    state.meta = null;
+    state.units = new Map();
+    state.aborted = false;
+    el("grids").innerHTML = "";
+    el("summary").innerHTML = "";
+    el("empty-list").innerHTML = "";
+    el("detail").innerHTML = "";
+    el("notice-band").classList.add("hide");
+    el("cache-status").textContent = "";
+
+    const hm = state.complex.house_manage_no;
+    const pb = state.complex.pblanc_no;
+    const started = Date.now();
+    try {
+      const result = await runCacheFirstRefresh({
+        state,
+        forceFull,
+        loadSnapshot: async () => {
+          const snapshot = await getJson("/api/cache", {
+            hm, pb, ...(forceFull ? { refresh: "full" } : {}),
+          });
+          renderCacheStatus(snapshot);
+          return snapshot;
+        },
+        fetchTopology: () => fetchTopology(hm, pb),
+        fetchSupply: () => getJson("/api/pblanc", { hm, pb }),
+        fetchUnit: (job) => fetchResolvedUnit(hm, pb, job),
+        runJobs: runPool,
+        onStored: renderStoredSnapshot,
+        onTopology: () => {
+          el("grids").innerHTML = "";
+          onMeta(state.meta);
+          state.units.forEach(onUnit);
+        },
+        onUnit,
+        onProgress: ({ updated, total }) => {
+          if (!operationController.owns(owner)) return;
+          el("progress").textContent =
+            `저장된 결과 ${state.units.size} / ${state.meta.total} · 업데이트 ${updated} / ${total}`;
+        },
+      });
+      if (!operationController.owns(owner)) return null;
+      renderCacheStatus(result.snapshot);
+
+      if (result.status === "blocked") {
+        el("progress").textContent =
+          `다른 방문자가 업데이트 중입니다 · ${result.snapshot.full_refresh.retry_after}초 뒤 전체 새로고침 가능`;
+        return result;
+      }
+      if (result.status === "fresh") return result;
+      if (result.status === "aborted") {
+        el("progress").textContent = `중단됨 · ${state.units.size}세대까지 저장`;
+        return result;
+      }
+      if (result.status === "empty") {
+        el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
+        return result;
+      }
+      const summary = summarize(((Date.now() - started) / 1000).toFixed(1));
+      el("progress").textContent = completionStatus(summary);
+      onDone(summary);
+      return result;
+    } catch (error) {
+      if (operationController.owns(owner)) el("progress").textContent = error.message;
+      return null;
     }
+  });
+}
 
-    // 동마다 호 목록을 받는다
-    const perDong = await runPool(dongs, (dong) =>
-      getJson("/api/hos", { hm, pb, sn: dong.sn }).then((r) => ({ ...r, name: dong.name }))
-    );
-    if (state.aborted) { finishScan(); return; }
-
-    const metaDongs = perDong.filter(Boolean).map((d) => ({
-      name: d.name, hos: d.hos, grid: d.grid,
-    }));
-    const jobs = [];
-    metaDongs.forEach((d) => d.hos.forEach((ho) => jobs.push({ dong: d.name, ho })));
-
-    if (!jobs.length) {
-      el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
-      finishScan();
-      return;
-    }
-
-    // 공고 정보는 부가 정보다. 실패해도 스캔을 막지 않는다.
-    const supply = await getJson("/api/pblanc", { hm, pb })
-      .then((r) => r.supply)
-      .catch(() => null);
-
-    state.meta = { total: jobs.length, dongs: metaDongs, supply };
-    onMeta(state.meta);
-    el("progress").textContent = `0 / ${jobs.length}`;
-
-    await runPool(jobs, async (job) => {
-      const unit = await getJson("/api/unit", { hm, pb, dong: job.dong, ho: job.ho })
-        .catch(() => ({ dong: job.dong, ho: job.ho, status: "error", fields: {} }));
-      state.units.set(unit.dong + "-" + unit.ho, unit);
-      onUnit(unit);
-      el("progress").textContent = `${state.units.size} / ${jobs.length}`;
-      return unit;
-    });
-
-    if (state.aborted) {
-      el("progress").textContent = `중단됨 · ${state.units.size}세대까지 조회`;
-      finishScan();
-      return;
-    }
-
-    const tally = { info: 0, empty: 0, error: 0 };
-    state.units.forEach((u) => { tally[u.status] = (tally[u.status] || 0) + 1; });
-    const summary = {
-      total: jobs.length, ...tally,
-      elapsed: ((Date.now() - started) / 1000).toFixed(1),
-    };
-    el("progress").textContent =
-      `완료 · ${summary.total}세대 중 정보없음 ${summary.empty}건` +
-      (summary.error ? ` · 실패 ${summary.error}건` : "") +
-      ` (${summary.elapsed}초)`;
-    finishScan();
-    onDone(summary);
-  } catch (error) {
-    el("progress").textContent = error.message;
-    finishScan();
-  }
-});
+el("scan-button").addEventListener("click", () => scanComplex());
 
 el("stop-button").addEventListener("click", () => {
   state.aborted = true;
   el("progress").textContent = `중단하는 중… (${state.units.size}세대까지 조회)`;
 });
 
-function finishScan() {
-  el("scan-button").disabled = false;
-  el("stop-button").classList.add("hide");
+function setOperationBusy(busy) {
+  document.querySelectorAll("[data-operation-region]").forEach((region) => {
+    region.setAttribute("aria-busy", String(busy));
+  });
+  el("scan-button").disabled = busy || !state.complex;
+  el("stop-button").classList.toggle("hide", !busy);
+  document.querySelectorAll("[data-operation-action]").forEach((button) => {
+    button.disabled = busy;
+  });
+  document.querySelectorAll('input[name="complex"]').forEach((radio) => {
+    radio.disabled = busy;
+  });
 }
 
 function cellId(dong, ho) { return `c-${dong}-${ho}`; }
@@ -527,14 +601,21 @@ function buildFlatList(dong) {
 const SUPPLY_MARK = { "특별공급": "특", "일반공급": "일" };
 const SUPPLY_CLASS = { "특별공급": "supply-s", "일반공급": "supply-g" };
 
+function unitFields(unit) {
+  const fields = unit?.fields;
+  return fields && typeof fields === "object" && !Array.isArray(fields) ? fields : {};
+}
+
 function onUnit(unit) {
   const cell = document.getElementById(cellId(unit.dong, unit.ho));
   if (!cell) return;
-  cell.classList.remove("supply-s", "supply-g");  // 재시도로 값이 바뀔 수 있다
+  cell.classList.remove("error", "empty", "info", "supply-s", "supply-g");
   cell.classList.add(unit.status);
 
-  const type = unit.fields["주택형"] || "";
-  const supply = unit.fields["공급유형"] || "";
+  const fields = unit.fields && typeof unit.fields === "object" && !Array.isArray(unit.fields)
+    ? unit.fields : {};
+  const type = fields["주택형"] || "";
+  const supply = fields["공급유형"] || "";
   // 미계약·실패 세대에는 공급유형이 없다. 청약홈이 값을 주지 않으므로 글자와 색을 비운다.
   cell.textContent = SUPPLY_MARK[supply] || "";
   if (SUPPLY_CLASS[supply]) cell.classList.add(SUPPLY_CLASS[supply]);
@@ -550,7 +631,7 @@ function lineTypes(dongName) {
   const found = new Map();
   for (const unit of state.units.values()) {
     if (unit.dong !== dongName || unit.status !== "info") continue;
-    const type = unit.fields["주택형"];
+    const type = unitFields(unit)["주택형"];
     if (!type || unit.ho.length < 3) continue;
     const line = unit.ho.slice(-2);
     const seen = found.get(line);
@@ -567,7 +648,7 @@ function tallyByType() {
   for (const unit of state.units.values()) {
     if (!byDong.has(unit.dong)) byDong.set(unit.dong, lineTypes(unit.dong));
     const type =
-      unit.fields["주택형"] ||
+      unitFields(unit)["주택형"] ||
       (unit.ho.length >= 3 ? byDong.get(unit.dong).get(unit.ho.slice(-2)) : "");
     if (!type || type === "혼합") continue;
     if (!tally.has(type)) tally.set(type, { scanned: 0, empty: 0 });
@@ -654,13 +735,13 @@ const STATUS_LABEL = { info: "정보있음", empty: "정보없음", error: "조�
 
 function csvCell(value) {
   const text = String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function buildCsv() {
   const lines = [CSV_HEADER.join(",")];
   for (const unit of state.units.values()) {
-    const f = unit.fields || {};
+    const f = unitFields(unit);
     const houseType = f["주택형"] || "";
     lines.push([
       unit.dong, unit.ho,
@@ -692,8 +773,18 @@ function renderActions(summary) {
   const button = document.createElement("button");
   button.className = "btn";
   button.textContent = "CSV Download";
+  button.dataset.operationAction = "true";
+  button.disabled = operationController.isBusy();
   button.addEventListener("click", downloadCsv);
   bar.append(button);
+
+  const refresh = document.createElement("button");
+  refresh.className = "btn";
+  refresh.textContent = "전체 새로고침";
+  refresh.dataset.operationAction = "true";
+  refresh.disabled = operationController.isBusy();
+  refresh.addEventListener("click", () => scanComplex({ forceFull: true }));
+  bar.append(refresh);
 
   el("empty-list").prepend(bar);
   if (summary.error) renderRetry(summary, bar);
@@ -703,37 +794,42 @@ function renderRetry(summary, bar) {
   const button = document.createElement("button");
   button.className = "btn";
   button.textContent = `Retry ${summary.error}`;
+  button.dataset.operationAction = "true";
+  button.disabled = operationController.isBusy();
   button.addEventListener("click", async () => {
-    button.disabled = true;
-    button.textContent = "Retrying…";
+    await retryFailedUnits(summary);
+  });
+  bar.append(button);
+}
+
+async function retryFailedUnits(summary) {
+  return runExclusiveOperation(operationController, "retry", async (owner) => {
+    state.aborted = false;
+    el("progress").textContent = `실패 ${summary.error}건 재시도 중…`;
     const failed = [...state.units.values()].filter((unit) => unit.status === "error");
     for (const unit of failed) {
-      const params = new URLSearchParams({
-        hm: state.complex.house_manage_no,
-        pb: state.complex.pblanc_no,
-        dong: unit.dong,
-        ho: unit.ho,
-      });
+      if (state.aborted || !operationController.owns(owner)) break;
       try {
-        const fresh = await (await fetch("/api/unit?" + params)).json();
-        state.units.set(fresh.dong + "-" + fresh.ho, fresh);
-        const cell = document.getElementById(cellId(fresh.dong, fresh.ho));
-        if (cell) {
-          cell.classList.remove("error", "info", "empty");
-          cell.classList.add(fresh.status);
-        }
+        const fresh = await fetchResolvedUnit(
+          state.complex.house_manage_no,
+          state.complex.pblanc_no,
+          unit,
+        );
+        if (!fresh || state.aborted || !operationController.owns(owner)) continue;
+        state.units.set(unitKey(fresh.dong, fresh.ho), fresh);
+        onUnit(fresh);
       } catch (error) {
         // 이 세대는 그대로 두고 다음으로 넘어간다
       }
     }
-    const tally = { info: 0, empty: 0, error: 0 };
-    state.units.forEach((unit) => { tally[unit.status] = (tally[unit.status] || 0) + 1; });
-    const updated = { ...summary, ...tally };
-    renderLegend(updated);
-    renderEmptyList();
-    renderActions(updated);
+    if (!operationController.owns(owner)) return null;
+    const updated = summarize(summary.elapsed);
+    el("progress").textContent = state.aborted
+      ? `중단됨 · ${state.units.size}세대까지 저장`
+      : completionStatus(updated);
+    onDone(updated);
+    return updated;
   });
-  bar.append(button);
 }
 
 function renderLegend(summary) {
@@ -742,7 +838,7 @@ function renderLegend(summary) {
   let special = 0, general = 0, unknown = 0;
   state.units.forEach((unit) => {
     if (unit.status !== "info") return;
-    const supply = unit.fields["공급유형"];
+    const supply = unitFields(unit)["공급유형"];
     if (supply === "특별공급") special += 1;
     else if (supply === "일반공급") general += 1;
     else unknown += 1;
@@ -790,7 +886,7 @@ function renderEmptyList() {
 }
 
 function showDetail(dong, ho) {
-  const unit = state.units.get(dong + "-" + ho);
+  const unit = state.units.get(unitKey(dong, ho));
   if (!unit) return;
   if (unit.status !== "info") {
     if (unit.status !== "empty") {
@@ -810,7 +906,7 @@ function showDetail(dong, ho) {
       `<div class="caption">정보없음 · 미계약·부적격 추정${parts.length ? " · " + parts.join(" · ") : ""}</div>`;
     return;
   }
-  const rows = Object.entries(unit.fields)
+  const rows = Object.entries(unitFields(unit))
     .map(([key, value]) => `<div><span>${key}</span>${value || "-"}</div>`)
     .join("");
   el("detail").innerHTML = `<div class="dt">${dong}동 ${ho}호</div><div class="fields">${rows}</div>`;

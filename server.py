@@ -32,6 +32,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(PUBLIC_DIR / "index.html", "text/html; charset=utf-8")
             return
 
+        if parsed.path == "/cache.mjs":
+            self._send_file(PUBLIC_DIR / "cache.mjs", "text/javascript; charset=utf-8")
+            return
+
         route = _lib.ROUTES.get(parsed.path)
         if route is None:
             _lib.respond(self, 404, {"message": "없는 경로입니다."})

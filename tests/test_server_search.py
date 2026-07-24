@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "api"))
 
 import applyhome
+import _lib
 import server
 
 
@@ -20,6 +21,8 @@ class RoutingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.original = applyhome.search_complexes
+        cls.original_cache = _lib.CACHE
+        _lib.CACHE = None
         applyhome.search_complexes = lambda name="", area="", sigungu="", page=1: (
             [applyhome.Complex("2025000439", "2025000439", "상봉 센트럴 아이파크",
                                "2025.09.19", "2025.10.14", "일반공급 : 1년")],
@@ -34,6 +37,7 @@ class RoutingTest(unittest.TestCase):
         cls.httpd.shutdown()
         cls.httpd.server_close()
         applyhome.search_complexes = cls.original
+        _lib.CACHE = cls.original_cache
 
     def get(self, path):
         url = f"http://127.0.0.1:{self.port}{urllib.parse.quote(path, safe='/?=&%')}"
@@ -57,17 +61,34 @@ class RoutingTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("청약홈 미계약 세대 스캐너", raw.decode("utf-8"))
 
+    def test_cache_module을_javascript로_준다(self):
+        url = f"http://127.0.0.1:{self.port}/cache.mjs"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            self.assertEqual(response.headers.get_content_type(), "text/javascript")
+            self.assertIn("selectUnitJobs", response.read().decode("utf-8"))
+
     def test_없는_경로는_404다(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.get("/api/nope")
         self.assertEqual(caught.exception.code, 404)
 
-    def test_다섯_API_경로가_모두_연결되어_있다(self):
-        import _lib
+    def test_여섯_API_경로가_모두_연결되어_있다(self):
         self.assertEqual(
             set(_lib.ROUTES),
-            {"/api/search", "/api/dongs", "/api/hos", "/api/unit", "/api/pblanc"},
+            {
+                "/api/search",
+                "/api/dongs",
+                "/api/hos",
+                "/api/unit",
+                "/api/pblanc",
+                "/api/cache",
+            },
         )
+
+    def test_cache_미설정은_disabled_JSON이다(self):
+        status, raw = self.get("/api/cache?hm=1&pb=2")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(raw)["cache"], "disabled")
 
 
 if __name__ == "__main__":
