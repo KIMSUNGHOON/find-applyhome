@@ -589,6 +589,33 @@ test("onUnit은 이전 status·공급 class와 text·title을 완전히 교체�
   assert.equal(cell.title, "101동 201호");
 });
 
+test("onUnit은 비객체 fields를 빈 객체로 취급해 렌더링을 계속한다", () => {
+  const classes = new Set(["cell", "info", "supply-s"]);
+  const cell = {
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
+    },
+    textContent: "특",
+    title: "old",
+  };
+  const onUnit = loadInlineFunction("onUnit", {
+    document: { getElementById: () => cell },
+    cellId: () => "c-101-201",
+    SUPPLY_MARK: { "특별공급": "특", "일반공급": "일" },
+    SUPPLY_CLASS: { "특별공급": "supply-s", "일반공급": "supply-g" },
+    shortType: () => "84A",
+  });
+
+  for (const fields of [null, [], "invalid"]) {
+    assert.doesNotThrow(() => onUnit({
+      dong: "101", ho: "201", status: "empty", fields,
+    }));
+    assert.equal(cell.textContent, "");
+    assert.equal(cell.title, "101동 201호");
+  }
+});
+
 test("직접 retry 결과는 Map 뒤 onUnit과 전체 onDone 순서로 반영한다", async () => {
   const failed = { dong: "101", ho: "201", status: "error", fields: {} };
   const fresh = {

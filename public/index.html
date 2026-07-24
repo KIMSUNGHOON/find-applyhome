@@ -585,14 +585,21 @@ function buildFlatList(dong) {
 const SUPPLY_MARK = { "특별공급": "특", "일반공급": "일" };
 const SUPPLY_CLASS = { "특별공급": "supply-s", "일반공급": "supply-g" };
 
+function unitFields(unit) {
+  const fields = unit?.fields;
+  return fields && typeof fields === "object" && !Array.isArray(fields) ? fields : {};
+}
+
 function onUnit(unit) {
   const cell = document.getElementById(cellId(unit.dong, unit.ho));
   if (!cell) return;
   cell.classList.remove("error", "empty", "info", "supply-s", "supply-g");
   cell.classList.add(unit.status);
 
-  const type = unit.fields["주택형"] || "";
-  const supply = unit.fields["공급유형"] || "";
+  const fields = unit.fields && typeof unit.fields === "object" && !Array.isArray(unit.fields)
+    ? unit.fields : {};
+  const type = fields["주택형"] || "";
+  const supply = fields["공급유형"] || "";
   // 미계약·실패 세대에는 공급유형이 없다. 청약홈이 값을 주지 않으므로 글자와 색을 비운다.
   cell.textContent = SUPPLY_MARK[supply] || "";
   if (SUPPLY_CLASS[supply]) cell.classList.add(SUPPLY_CLASS[supply]);
@@ -608,7 +615,7 @@ function lineTypes(dongName) {
   const found = new Map();
   for (const unit of state.units.values()) {
     if (unit.dong !== dongName || unit.status !== "info") continue;
-    const type = unit.fields["주택형"];
+    const type = unitFields(unit)["주택형"];
     if (!type || unit.ho.length < 3) continue;
     const line = unit.ho.slice(-2);
     const seen = found.get(line);
@@ -625,7 +632,7 @@ function tallyByType() {
   for (const unit of state.units.values()) {
     if (!byDong.has(unit.dong)) byDong.set(unit.dong, lineTypes(unit.dong));
     const type =
-      unit.fields["주택형"] ||
+      unitFields(unit)["주택형"] ||
       (unit.ho.length >= 3 ? byDong.get(unit.dong).get(unit.ho.slice(-2)) : "");
     if (!type || type === "혼합") continue;
     if (!tally.has(type)) tally.set(type, { scanned: 0, empty: 0 });
@@ -718,7 +725,7 @@ function csvCell(value) {
 function buildCsv() {
   const lines = [CSV_HEADER.join(",")];
   for (const unit of state.units.values()) {
-    const f = unit.fields || {};
+    const f = unitFields(unit);
     const houseType = f["주택형"] || "";
     lines.push([
       unit.dong, unit.ho,
@@ -802,7 +809,7 @@ function renderLegend(summary) {
   let special = 0, general = 0, unknown = 0;
   state.units.forEach((unit) => {
     if (unit.status !== "info") return;
-    const supply = unit.fields["공급유형"];
+    const supply = unitFields(unit)["공급유형"];
     if (supply === "특별공급") special += 1;
     else if (supply === "일반공급") general += 1;
     else unknown += 1;
@@ -870,7 +877,7 @@ function showDetail(dong, ho) {
       `<div class="caption">정보없음 · 미계약·부적격 추정${parts.length ? " · " + parts.join(" · ") : ""}</div>`;
     return;
   }
-  const rows = Object.entries(unit.fields)
+  const rows = Object.entries(unitFields(unit))
     .map(([key, value]) => `<div><span>${key}</span>${value || "-"}</div>`)
     .join("");
   el("detail").innerHTML = `<div class="dt">${dong}동 ${ho}호</div><div class="fields">${rows}</div>`;

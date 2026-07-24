@@ -131,7 +131,9 @@ def unit(query: dict) -> tuple[int, dict]:
         try:
             found = applyhome.fetch_detail(hm, pb, dong, ho)
         except applyhome.ApplyhomeError as error:
-            saved = _cache_call("record_unit_error", hm, pb, dong, ho, str(error))
+            saved = _cache_call(
+                "record_unit_error", hm, pb, dong, ho, str(error), token,
+            )
             if saved:
                 return 200, {**saved, "refresh_error": True}
             return 200, {
@@ -147,7 +149,7 @@ def unit(query: dict) -> tuple[int, dict]:
             "status": found.status,
             "fields": found.fields,
         }
-        _cache_call("write_unit", hm, pb, payload)
+        _cache_call("write_unit", hm, pb, payload, token)
         return 200, payload
     finally:
         if token:

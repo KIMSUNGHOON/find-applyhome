@@ -40,6 +40,12 @@ _RELEASE_SCRIPT = (
     'if redis.call("get", KEYS[1]) == ARGV[1] then '
     'return redis.call("del", KEYS[1]) else return 0 end'
 )
+_WRITE_UNIT_SCRIPT = (
+    'if redis.call("get", KEYS[1]) ~= ARGV[1] then return 0 end '
+    'redis.call("hset", KEYS[2], ARGV[2], ARGV[3]) '
+    'redis.call("expire", KEYS[2], ARGV[4]) '
+    'return 1'
+)
 
 
 def _rest_pipeline(url: str, token: str, commands: Sequence[Sequence[object]],
@@ -114,18 +120,177 @@ def _full_refresh_key(hm, pb):
     return f"cooldown:{complex_key(hm, pb)}:full"
 
 
-def _load_fields(raw: Mapping[str, str]) -> tuple[dict[str, dict], set[str]]:
-    loaded = {}
-    broken = set()
-    for field, value in raw.items():
-        try:
-            item = json.loads(value)
-            if not isinstance(item, dict):
-                raise ValueError("필드 값이 객체가 아닙니다.")
-            loaded[field] = item
-        except (TypeError, ValueError, json.JSONDecodeError):
-            broken.add(field)
-    return loaded, broken
+def _decode_record(value) -> dict | None:
+    try:
+        record = json.loads(value) if value is not None else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _timestamp(value, now: int) -> int | None:
+    if type(value) is not int or value <= 0 or value > now:
+        return None
+    return value
+
+
+def _text_identifier(value, limit: int = 64) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        _part(value, limit)
+    except ValueError:
+        return None
+    return value
+
+
+def _valid_serial(value) -> bool:
+    return type(value) is int and value > 0 and len(str(value)) <= 32
+
+
+def _normalize_dongs(record: dict | None, now: int) -> dict | None:
+    if record is None or not isinstance(record.get("dongs"), list):
+        return None
+    checked_at = _timestamp(record.get("checked_at"), now)
+    if checked_at is None:
+        return None
+    dongs = []
+    serials = set()
+    names = set()
+    for item in record["dongs"]:
+        if not isinstance(item, dict):
+            return None
+        serial = item.get("sn")
+        name = _text_identifier(item.get("name"))
+        if not _valid_serial(serial) or name is None:
+            return None
+        if serial in serials or name in names:
+            return None
+        serials.add(serial)
+        names.add(name)
+        dongs.append({"sn": serial, "name": name})
+    return {"dongs": dongs, "checked_at": checked_at}
+
+
+def _normalize_grid(value, hos: list[str]) -> dict | None | bool:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return False
+    floors = value.get("floors")
+    lines = value.get("lines")
+    cells = value.get("cells")
+    if not isinstance(floors, list) or not isinstance(lines, list) or not isinstance(cells, dict):
+        return False
+    if (any(type(floor) is not int for floor in floors)
+            or any(_text_identifier(line) is None for line in lines)):
+        return False
+    if len(set(floors)) != len(floors) or len(set(lines)) != len(lines):
+        return False
+    if set(cells) != set(hos):
+        return False
+    normalized_cells = {}
+    cell_floors = set()
+    cell_lines = set()
+    for ho, position in cells.items():
+        if (not isinstance(position, list) or len(position) != 2
+                or type(position[0]) is not int
+                or _text_identifier(position[1]) is None):
+            return False
+        floor, line = position
+        if floor not in floors or line not in lines:
+            return False
+        normalized_cells[ho] = [floor, line]
+        cell_floors.add(floor)
+        cell_lines.add(line)
+    if cell_floors != set(floors) or cell_lines != set(lines):
+        return False
+    return {"floors": list(floors), "lines": list(lines), "cells": normalized_cells}
+
+
+def _normalize_topology(record: dict | None, now: int, serial: int) -> dict | None:
+    if (record is None or not _valid_serial(record.get("sn"))
+            or record.get("sn") != serial or not isinstance(record.get("hos"), list)):
+        return None
+    checked_at = _timestamp(record.get("checked_at"), now)
+    if checked_at is None:
+        return None
+    hos = []
+    for value in record["hos"]:
+        ho = _text_identifier(value)
+        if ho is None or ho in hos:
+            return None
+        hos.append(ho)
+    grid = _normalize_grid(record.get("grid"), hos)
+    if grid is False:
+        return None
+    return {"sn": serial, "hos": hos, "grid": grid, "checked_at": checked_at}
+
+
+_SUPPLY_TEXT_FIELDS = ("type", "short", "net_area", "area")
+_SUPPLY_COUNT_FIELDS = ("general", "special", "total")
+
+
+def _normalize_supply(record: dict | None, now: int) -> dict | None:
+    if record is None:
+        return None
+    checked_at = _timestamp(record.get("checked_at"), now)
+    supply = record.get("supply")
+    if checked_at is None or (supply is not None and not isinstance(supply, list)):
+        return None
+    if supply is None:
+        return {"supply": None, "checked_at": checked_at}
+    normalized = []
+    types = set()
+    for item in supply:
+        if not isinstance(item, dict):
+            return None
+        if any(not isinstance(item.get(field), str) for field in _SUPPLY_TEXT_FIELDS):
+            return None
+        if any(type(item.get(field)) is not int or item[field] < 0
+               for field in _SUPPLY_COUNT_FIELDS):
+            return None
+        if not item["type"] or item["type"] in types:
+            return None
+        types.add(item["type"])
+        normalized.append({
+            field: item[field]
+            for field in (*_SUPPLY_TEXT_FIELDS, *_SUPPLY_COUNT_FIELDS)
+        })
+    return {"supply": normalized, "checked_at": checked_at}
+
+
+def _normalize_unit(record: dict | None, now: int, dong: str, ho: str) -> dict | None:
+    if record is None or record.get("dong") != dong or record.get("ho") != ho:
+        return None
+    status = record.get("status")
+    fields = record.get("fields")
+    checked_at = _timestamp(record.get("checked_at"), now)
+    if (not isinstance(status, str) or status not in UNIT_STATUSES
+            or not isinstance(fields, dict) or checked_at is None):
+        return None
+    if any(not isinstance(key, str) or not isinstance(value, str)
+           for key, value in fields.items()):
+        return None
+    normalized = {
+        "dong": dong,
+        "ho": ho,
+        "status": status,
+        "fields": dict(fields),
+        "checked_at": checked_at,
+    }
+    if "last_error_at" in record:
+        last_error_at = _timestamp(record.get("last_error_at"), now)
+        if last_error_at is None:
+            return None
+        normalized["last_error_at"] = last_error_at
+        if "last_error" in record:
+            if record.get("last_error") != "최근 갱신에 실패했습니다.":
+                return None
+            normalized["last_error"] = "최근 갱신에 실패했습니다."
+    elif "last_error" in record:
+        return None
+    return normalized
 
 
 def _refresh_due(unit: dict, now: int) -> bool:
@@ -145,12 +310,10 @@ def assemble_snapshot(raw: Mapping[str, str], now: int) -> Snapshot:
         return Snapshot({"cache": "miss", "complete": False, "checked_at": None,
                          "meta": None, "units": [], "refresh": refresh})
 
-    fields, broken = _load_fields(raw)
-    dongs_record = fields.get("_dongs")
-    if not dongs_record or not isinstance(dongs_record.get("dongs"), list):
+    dongs_record = _normalize_dongs(_decode_record(raw.get("_dongs")), now)
+    if dongs_record is None:
         return Snapshot({"cache": "partial", "complete": False, "checked_at": None,
-                         "meta": None, "units": [], "refresh": refresh},
-                        tuple(sorted(field for field in broken if field.startswith("u:"))))
+                         "meta": None, "units": [], "refresh": refresh})
 
     dongs = dongs_record["dongs"]
     topology_checked_at = int(dongs_record.get("checked_at") or 0)
@@ -159,14 +322,16 @@ def assemble_snapshot(raw: Mapping[str, str], now: int) -> Snapshot:
     expected = []
     timestamps = [topology_checked_at]
     for dong in dongs:
-        record = fields.get(topology_field(dong["sn"]))
-        if not record or int(record.get("checked_at") or 0) < topology_checked_at:
+        record = _normalize_topology(
+            _decode_record(raw.get(topology_field(dong["sn"]))), now, dong["sn"],
+        )
+        if record is None or record["checked_at"] < topology_checked_at:
             topology_complete = False
             continue
-        hos = [str(ho) for ho in record.get("hos", [])]
-        meta_dongs.append({"name": str(dong["name"]), "hos": hos,
+        hos = record["hos"]
+        meta_dongs.append({"name": dong["name"], "hos": hos,
                            "grid": record.get("grid")})
-        expected.extend((str(dong["name"]), ho) for ho in hos)
+        expected.extend((dong["name"], ho) for ho in hos)
         timestamps.append(int(record["checked_at"]))
 
     expected_fields = {unit_field(dong, ho): (dong, ho) for dong, ho in expected}
@@ -174,8 +339,8 @@ def assemble_snapshot(raw: Mapping[str, str], now: int) -> Snapshot:
     missing = []
     due = []
     for field, (dong, ho) in expected_fields.items():
-        unit = fields.get(field)
-        if not unit or unit.get("status") not in UNIT_STATUSES:
+        unit = _normalize_unit(_decode_record(raw.get(field)), now, dong, ho)
+        if unit is None:
             missing.append({"dong": dong, "ho": ho})
             continue
         units.append(unit)
@@ -184,10 +349,10 @@ def assemble_snapshot(raw: Mapping[str, str], now: int) -> Snapshot:
             due.append({"dong": dong, "ho": ho})
 
     orphan_fields = tuple(sorted(
-        field for field in fields
+        field for field in raw
         if field.startswith("u:") and field not in expected_fields
     )) if topology_complete else ()
-    supply_record = fields.get("_supply")
+    supply_record = _normalize_supply(_decode_record(raw.get("_supply")), now)
     supply = supply_record.get("supply") if supply_record else None
     supply_checked_at = int(supply_record.get("checked_at") or 0) if supply_record else 0
     full_topology_due = bool(dongs) and now - topology_checked_at >= TOPOLOGY_MAX_AGE
@@ -285,12 +450,32 @@ class CacheStore:
     def write_supply(self, hm, pb, supply):
         return self._write(hm, pb, "_supply", {"supply": supply})
 
-    def write_unit(self, hm, pb, unit):
+    def _write_unit(self, hm, pb, dong, ho, value, token):
+        if not token:
+            return False
+        saved = dict(value)
+        saved["checked_at"] = int(saved.get("checked_at") or self.now())
+        key = complex_key(hm, pb)
+        try:
+            result = self.transport.pipeline([[
+                "EVAL", _WRITE_UNIT_SCRIPT, 2,
+                _unit_lock_key(hm, pb, dong, ho), key,
+                token, unit_field(dong, ho),
+                json.dumps(saved, ensure_ascii=False, separators=(",", ":")),
+                CACHE_TTL,
+            ]])[0]
+            return bool(result)
+        except (CacheUnavailable, ValueError):
+            return False
+
+    def write_unit(self, hm, pb, unit, token):
         clean = {key: value for key, value in unit.items()
                  if key in {"dong", "ho", "status", "fields"}}
         if clean.get("status") not in UNIT_STATUSES:
             return False
-        return self._write(hm, pb, unit_field(clean["dong"], clean["ho"]), clean)
+        return self._write_unit(
+            hm, pb, clean["dong"], clean["ho"], clean, token,
+        )
 
     def claim_unit(self, hm, pb, dong, ho, token=None):
         owner = token or uuid.uuid4().hex
@@ -336,20 +521,19 @@ class CacheStore:
             result = self.transport.pipeline([[
                 "HGET", complex_key(hm, pb), unit_field(dong, ho),
             ]])[0]
-            unit = json.loads(result) if result else None
-            return unit if isinstance(unit, dict) else None
-        except (CacheUnavailable, ValueError, json.JSONDecodeError):
+            return _normalize_unit(_decode_record(result), self.now(), dong, ho)
+        except (CacheUnavailable, ValueError):
             return None
 
-    def record_unit_error(self, hm, pb, dong, ho, message):
+    def record_unit_error(self, hm, pb, dong, ho, message, token):
         prior = self.read_unit(hm, pb, dong, ho)
         if prior and prior.get("status") in {"info", "empty"}:
             saved = dict(prior)
             saved["last_error_at"] = self.now()
             saved["last_error"] = "최근 갱신에 실패했습니다."
-            self._write(hm, pb, unit_field(dong, ho), saved)
+            self._write_unit(hm, pb, dong, ho, saved, token)
             return saved
         saved = {"dong": dong, "ho": ho, "status": "error", "fields": {}}
-        self._write(hm, pb, unit_field(dong, ho), saved)
         saved["checked_at"] = self.now()
+        self._write_unit(hm, pb, dong, ho, saved, token)
         return saved

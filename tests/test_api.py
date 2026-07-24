@@ -217,8 +217,8 @@ class FakeCache:
     def write_supply(self, hm, pb, supply):
         self.calls.append(("write_supply", hm, pb, supply))
 
-    def write_unit(self, hm, pb, unit):
-        self.calls.append(("write_unit", hm, pb, unit))
+    def write_unit(self, hm, pb, unit, token):
+        self.calls.append(("write_unit", hm, pb, unit, token))
 
     def claim_unit(self, hm, pb, dong, ho):
         return self.lock
@@ -229,8 +229,8 @@ class FakeCache:
     def read_unit(self, hm, pb, dong, ho):
         return self.cached_unit
 
-    def record_unit_error(self, hm, pb, dong, ho, message):
-        self.calls.append(("record_unit_error", dong, ho))
+    def record_unit_error(self, hm, pb, dong, ho, message, token):
+        self.calls.append(("record_unit_error", dong, ho, token))
         return {"dong": dong, "ho": ho, "status": "error", "fields": {}}
 
     def claim_full_refresh(self, hm, pb):
@@ -375,7 +375,24 @@ class CacheIntegrationTest(unittest.TestCase):
             applyhome.fetch_detail = original
         self.assertEqual(status, 200)
         self.assertEqual(body["status"], "info")
-        self.assertTrue(any(call[0] == "write_unit" for call in self.cache.calls))
+        self.assertTrue(any(
+            call[0] == "write_unit" and call[-1] == "owner"
+            for call in self.cache.calls
+        ))
+        self.assertIn(("release_unit", "owner"), self.cache.calls)
+
+    def test_unit_실패도_소유자_토큰으로_오류를_기록한다(self):
+        original = applyhome.fetch_detail
+        applyhome.fetch_detail = lambda hm, pb, dong, ho: (_ for _ in ()).throw(
+            applyhome.ApplyhomeError("타임아웃")
+        )
+        try:
+            status, body = _lib.unit(q(hm="1", pb="2", dong="101", ho="201"))
+        finally:
+            applyhome.fetch_detail = original
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], "error")
+        self.assertIn(("record_unit_error", "101", "201", "owner"), self.cache.calls)
         self.assertIn(("release_unit", "owner"), self.cache.calls)
 
 

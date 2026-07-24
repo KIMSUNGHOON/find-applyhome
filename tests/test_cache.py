@@ -24,7 +24,11 @@ def complete_raw(unit_status="info", unit_checked_at=NOW):
         "t:1": encoded({
             "sn": 1,
             "hos": ["201"],
-            "grid": {"cells": {"201": [2, "01"]}},
+            "grid": {
+                "floors": [2],
+                "lines": ["01"],
+                "cells": {"201": [2, "01"]},
+            },
             "checked_at": NOW,
         }),
         "_supply": encoded({"supply": [], "checked_at": NOW}),
@@ -105,6 +109,104 @@ class SnapshotPolicyTest(unittest.TestCase):
         self.assertEqual(result.payload["cache"], "partial")
         self.assertFalse(result.payload["complete"])
 
+    def test_dongs_record의_식별자나_timestamp가_손상되면_topology를_다시_읽는다(self):
+        malformed = [
+            {"dongs": [{"sn": True, "name": "101"}], "checked_at": NOW},
+            {"dongs": [{"sn": 10**40, "name": "101"}], "checked_at": NOW},
+            {"dongs": [{"sn": 1, "name": None}], "checked_at": NOW},
+            {"dongs": [{"sn": 1, "name": "101\n"}], "checked_at": NOW},
+            {"dongs": [{"sn": 1, "name": "101"}], "checked_at": "now"},
+            {"dongs": [{"sn": 1, "name": "101"}], "checked_at": NOW + 1},
+        ]
+        for record in malformed:
+            with self.subTest(record=record):
+                raw = complete_raw()
+                raw["_dongs"] = encoded(record)
+                result = _cache.assemble_snapshot(raw, NOW)
+                self.assertEqual(result.payload["cache"], "partial")
+                self.assertIsNone(result.payload["meta"])
+                self.assertTrue(result.payload["refresh"]["topology"])
+
+    def test_topology_record의_연결_식별자와_구조가_손상되면_partial이다(self):
+        malformed = [
+            {"sn": 2, "hos": ["201"], "grid": None, "checked_at": NOW},
+            {"sn": True, "hos": ["201"], "grid": None, "checked_at": NOW},
+            {"sn": 1, "hos": None, "grid": None, "checked_at": NOW},
+            {"sn": 1, "hos": [201], "grid": None, "checked_at": NOW},
+            {"sn": 1, "hos": ["201"], "grid": [], "checked_at": NOW},
+            {"sn": 1, "hos": ["201"], "grid": {
+                "floors": [2], "lines": ["01"], "cells": {"999": [2, "01"]},
+            }, "checked_at": NOW},
+            {"sn": 1, "hos": ["201"], "grid": None, "checked_at": 1.5},
+        ]
+        for record in malformed:
+            with self.subTest(record=record):
+                raw = complete_raw()
+                raw["t:1"] = encoded(record)
+                result = _cache.assemble_snapshot(raw, NOW)
+                self.assertEqual(result.payload["cache"], "partial")
+                self.assertFalse(result.payload["complete"])
+                self.assertTrue(result.payload["refresh"]["topology"])
+
+    def test_supply_null은_유효한_당일_record로_보존한다(self):
+        raw = complete_raw()
+        raw["_supply"] = encoded({"supply": None, "checked_at": NOW})
+        result = _cache.assemble_snapshot(raw, NOW)
+        self.assertEqual(result.payload["cache"], "fresh")
+        self.assertIsNone(result.payload["meta"]["supply"])
+        self.assertFalse(result.payload["refresh"]["supply"])
+
+    def test_supply_record의_구조나_timestamp가_손상되면_공급정보를_다시_읽는다(self):
+        malformed = [
+            {"supply": {}, "checked_at": NOW},
+            {"supply": [{"type": "084.0"}], "checked_at": NOW},
+            {"supply": [{
+                "type": "084.0", "short": "84", "net_area": "84.0", "area": "100.0",
+                "general": "1", "special": 2, "total": 3,
+            }], "checked_at": NOW},
+            {"supply": [], "checked_at": False},
+        ]
+        for record in malformed:
+            with self.subTest(record=record):
+                raw = complete_raw()
+                raw["_supply"] = encoded(record)
+                result = _cache.assemble_snapshot(raw, NOW)
+                self.assertEqual(result.payload["cache"], "stale")
+                self.assertTrue(result.payload["complete"])
+                self.assertIsNone(result.payload["meta"]["supply"])
+                self.assertTrue(result.payload["refresh"]["supply"])
+
+    def test_unit_record의_식별자_fields_timestamp가_손상되면_누락으로_취급한다(self):
+        malformed = [
+            {"dong": "102", "ho": "201", "status": "info",
+             "fields": {}, "checked_at": NOW},
+            {"dong": "101", "ho": "202", "status": "info",
+             "fields": {}, "checked_at": NOW},
+            {"dong": "101", "ho": "201", "status": [],
+             "fields": {}, "checked_at": NOW},
+            {"dong": "101", "ho": "201", "status": "info",
+             "fields": None, "checked_at": NOW},
+            {"dong": "101", "ho": "201", "status": "info",
+             "fields": {"주택형": ["084.0"]}, "checked_at": NOW},
+            {"dong": "101", "ho": "201", "status": "info",
+             "fields": {}, "checked_at": "now"},
+            {"dong": "101", "ho": "201", "status": "info",
+             "fields": {}, "checked_at": NOW, "last_error_at": NOW + 1,
+             "last_error": "최근 갱신에 실패했습니다."},
+        ]
+        field = _cache.unit_field("101", "201")
+        for record in malformed:
+            with self.subTest(record=record):
+                raw = complete_raw()
+                raw[field] = encoded(record)
+                result = _cache.assemble_snapshot(raw, NOW)
+                self.assertEqual(result.payload["cache"], "partial")
+                self.assertEqual(result.payload["units"], [])
+                self.assertEqual(
+                    result.payload["refresh"]["units"],
+                    [{"dong": "101", "ho": "201"}],
+                )
+
     def test_info와_topology는_7일부터_전체_재확인한다(self):
         raw = complete_raw("info", NOW - WEEK)
         raw["_dongs"] = encoded({"dongs": [{"sn": 1, "name": "101"}],
@@ -138,6 +240,38 @@ class FakeTransport:
         if isinstance(result, Exception):
             raise result
         return result
+
+
+class LeaseRaceTransport:
+    """호실 잠금과 Hash 한 필드만 실제 Redis처럼 유지하는 테스트 전송 계층."""
+
+    def __init__(self, lock_owner, unit):
+        self.lock_owner = lock_owner
+        self.unit = dict(unit)
+        self.calls = []
+
+    def pipeline(self, commands):
+        self.calls.append(commands)
+        results = []
+        for command in commands:
+            operation = command[0]
+            if operation == "HGET":
+                results.append(encoded(self.unit))
+            elif operation == "HSET":
+                self.unit = json.loads(command[3])
+                results.append(1)
+            elif operation == "EXPIRE":
+                results.append(1)
+            elif operation == "EVAL" and command[2] == 2:
+                token, _, value, _ = command[5:]
+                if self.lock_owner != token:
+                    results.append(0)
+                    continue
+                self.unit = json.loads(value)
+                results.append(1)
+            else:
+                raise AssertionError(f"지원하지 않는 Redis 명령: {command!r}")
+        return results
 
 
 class FakeResponse:
@@ -201,26 +335,88 @@ class CoordinationTest(unittest.TestCase):
                "fields": {"주택형": "084.8422A"}, "checked_at": NOW - WEEK}
         transport = FakeTransport([[
             json.dumps(old, ensure_ascii=False)
-        ], [1, 1]])
+        ], [1]])
         store = _cache.CacheStore(transport, now=lambda: NOW)
-        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃")
+        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃", "owner")
         self.assertEqual(saved["status"], "info")
         self.assertEqual(saved["last_error_at"], NOW)
         self.assertNotIn("타임아웃", json.dumps(transport.calls))
 
     def test_첫_조회_실패는_error로_저장한다(self):
-        transport = FakeTransport([[None], [1, 1]])
+        transport = FakeTransport([[None], [1]])
         store = _cache.CacheStore(transport, now=lambda: NOW)
-        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃")
+        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃", "owner")
         self.assertEqual(saved["status"], "error")
         self.assertEqual(saved["fields"], {})
 
     def test_비객체_호실_JSON은_오류_기록에서_처음_실패로_처리한다(self):
-        transport = FakeTransport([["1"], [1, 1]])
+        transport = FakeTransport([["1"], [1]])
         store = _cache.CacheStore(transport, now=lambda: NOW)
-        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃")
+        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃", "owner")
         self.assertEqual(saved["status"], "error")
         self.assertEqual(saved["fields"], {})
+
+    def test_read_unit은_요청과_일치하는_정상_record만_반환한다(self):
+        valid = {
+            "dong": "101", "ho": "201", "status": "info",
+            "fields": {"주택형": "084.0"}, "checked_at": NOW,
+        }
+        store = _cache.CacheStore(
+            FakeTransport([[encoded(valid)]]), now=lambda: NOW,
+        )
+        self.assertEqual(store.read_unit("1", "2", "101", "201"), valid)
+
+    def test_read_unit은_식별자_status_fields_timestamp가_손상된_record를_숨긴다(self):
+        malformed = [
+            {"dong": "102", "ho": "201", "status": "info",
+             "fields": {}, "checked_at": NOW},
+            {"dong": "101", "ho": "201", "status": "unknown",
+             "fields": {}, "checked_at": NOW},
+            {"dong": "101", "ho": "201", "status": [],
+             "fields": {}, "checked_at": NOW},
+            {"dong": "101", "ho": "201", "status": "info",
+             "fields": None, "checked_at": NOW},
+            {"dong": "101", "ho": "201", "status": "info",
+             "fields": {}, "checked_at": -1},
+        ]
+        for record in malformed:
+            with self.subTest(record=record):
+                store = _cache.CacheStore(
+                    FakeTransport([[encoded(record)]]), now=lambda: NOW,
+                )
+                self.assertIsNone(store.read_unit("1", "2", "101", "201"))
+
+    def test_만료된_잠금의_이전_소유자는_새_성공값을_덮어쓰지_못한다(self):
+        newer = {
+            "dong": "101", "ho": "201", "status": "info",
+            "fields": {"주택형": "새 값"}, "checked_at": NOW,
+        }
+        transport = LeaseRaceTransport("second-owner", newer)
+        store = _cache.CacheStore(transport, now=lambda: NOW + 1)
+
+        written = store.write_unit(
+            "1", "2",
+            {"dong": "101", "ho": "201", "status": "empty", "fields": {}},
+            "first-owner",
+        )
+
+        self.assertFalse(written)
+        self.assertEqual(transport.unit, newer)
+
+    def test_만료된_잠금의_이전_소유자는_새_성공값에_늦은_오류를_기록하지_못한다(self):
+        newer = {
+            "dong": "101", "ho": "201", "status": "info",
+            "fields": {"주택형": "새 값"}, "checked_at": NOW,
+        }
+        transport = LeaseRaceTransport("second-owner", newer)
+        store = _cache.CacheStore(transport, now=lambda: NOW + 1)
+
+        saved = store.record_unit_error(
+            "1", "2", "101", "201", "타임아웃", "first-owner",
+        )
+
+        self.assertEqual(saved["status"], "info")
+        self.assertEqual(transport.unit, newer)
 
 
 class PersistenceTest(unittest.TestCase):
@@ -255,21 +451,25 @@ class PersistenceTest(unittest.TestCase):
         ])
 
     def test_호실_하나만_HSET하고_TTL을_연장한다(self):
-        transport = FakeTransport([[1, 1]])
+        transport = FakeTransport([[1]])
         store = _cache.CacheStore(transport, now=lambda: NOW)
         store.write_unit("1", "2", {"dong": "101", "ho": "201",
-                                      "status": "empty", "fields": {}})
-        commands = transport.calls[0]
-        self.assertEqual(commands[0][:3], ["HSET", "scan:v1:1:2", "u:101:201"])
-        saved = json.loads(commands[0][3])
+                                      "status": "empty", "fields": {}}, "owner")
+        command = transport.calls[0][0]
+        self.assertEqual(command[:3], ["EVAL", _cache._WRITE_UNIT_SCRIPT, 2])
+        self.assertEqual(command[3:7], [
+            "lock:scan:v1:1:2:101:201", "scan:v1:1:2", "owner", "u:101:201",
+        ])
+        saved = json.loads(command[7])
         self.assertEqual(saved["checked_at"], NOW)
-        self.assertEqual(commands[1], ["EXPIRE", "scan:v1:1:2", _cache.CACHE_TTL])
+        self.assertEqual(command[8], _cache.CACHE_TTL)
 
     def test_허용되지_않은_호실_상태는_저장하지_않는다(self):
         transport = FakeTransport()
         store = _cache.CacheStore(transport, now=lambda: NOW)
         written = store.write_unit("1", "2", {"dong": "101", "ho": "201",
-                                                "status": "unknown", "fields": {}})
+                                                "status": "unknown", "fields": {}},
+                                   "owner")
         self.assertFalse(written)
         self.assertEqual(transport.calls, [])
 
