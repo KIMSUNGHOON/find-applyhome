@@ -182,6 +182,20 @@ class CoordinationTest(unittest.TestCase):
         self.assertEqual(store.claim_full_refresh("1", "2"),
                          {"allowed": False, "retry_after": 412})
 
+    def test_사라진_전체_새로고침_cooldown은_한번_더_획득한다(self):
+        transport = FakeTransport([[None, -2], ["OK", 600]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        self.assertEqual(store.claim_full_refresh("1", "2"),
+                         {"allowed": True, "retry_after": 0})
+        self.assertEqual(len(transport.calls), 2)
+
+    def test_사라진_전체_새로고침_cooldown은_재시도를_한번으로_제한한다(self):
+        transport = FakeTransport([[None, -2], [None, -2]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        self.assertEqual(store.claim_full_refresh("1", "2"),
+                         {"allowed": True, "retry_after": 0})
+        self.assertEqual(len(transport.calls), 2)
+
     def test_정상값_재확인_실패는_상태를_보존한다(self):
         old = {"dong": "101", "ho": "201", "status": "info",
                "fields": {"주택형": "084.8422A"}, "checked_at": NOW - WEEK}
@@ -196,6 +210,13 @@ class CoordinationTest(unittest.TestCase):
 
     def test_첫_조회_실패는_error로_저장한다(self):
         transport = FakeTransport([[None], [1, 1]])
+        store = _cache.CacheStore(transport, now=lambda: NOW)
+        saved = store.record_unit_error("1", "2", "101", "201", "타임아웃")
+        self.assertEqual(saved["status"], "error")
+        self.assertEqual(saved["fields"], {})
+
+    def test_비객체_호실_JSON은_오류_기록에서_처음_실패로_처리한다(self):
+        transport = FakeTransport([["1"], [1, 1]])
         store = _cache.CacheStore(transport, now=lambda: NOW)
         saved = store.record_unit_error("1", "2", "101", "201", "타임아웃")
         self.assertEqual(saved["status"], "error")

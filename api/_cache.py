@@ -317,12 +317,17 @@ class CacheStore:
         key = _full_refresh_key(hm, pb)
         token = uuid.uuid4().hex
         try:
-            result, ttl = self.transport.pipeline([
-                ["SET", key, token, "NX", "EX", FULL_REFRESH_COOLDOWN],
-                ["TTL", key],
-            ])
-            return {"allowed": result == "OK",
-                    "retry_after": 0 if result == "OK" else max(int(ttl or 0), 0)}
+            for _ in range(2):
+                result, ttl = self.transport.pipeline([
+                    ["SET", key, token, "NX", "EX", FULL_REFRESH_COOLDOWN],
+                    ["TTL", key],
+                ])
+                if result == "OK":
+                    return {"allowed": True, "retry_after": 0}
+                retry_after = max(int(ttl or 0), 0)
+                if retry_after:
+                    return {"allowed": False, "retry_after": retry_after}
+            return {"allowed": True, "retry_after": 0}
         except (CacheUnavailable, ValueError):
             return {"allowed": True, "retry_after": 0}
 
@@ -331,7 +336,8 @@ class CacheStore:
             result = self.transport.pipeline([[
                 "HGET", complex_key(hm, pb), unit_field(dong, ho),
             ]])[0]
-            return json.loads(result) if result else None
+            unit = json.loads(result) if result else None
+            return unit if isinstance(unit, dict) else None
         except (CacheUnavailable, ValueError, json.JSONDecodeError):
             return None
 
