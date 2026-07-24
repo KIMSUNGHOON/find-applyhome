@@ -1,0 +1,141 @@
+"""엔드포인트 로직. Vercel 함수와 로컬 서버가 함께 쓴다.
+
+각 함수는 parse_qs 결과를 받아 (HTTP 상태, JSON 페이로드) 를 돌려준다.
+HTTP 를 직접 다루지 않으므로 서버를 띄우지 않고 테스트할 수 있다.
+
+`_` 로 시작하는 파일이라 Vercel 이 함수로 변환하지 않는다.
+"""
+
+from __future__ import annotations
+
+import json
+import pathlib
+import sys
+
+# applyhome.py / grid.py 는 저장소 루트에 있다. 로컬과 Vercel 양쪽에서 import 되어야 한다.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
+import applyhome
+import grid
+
+
+def respond(request, status: int, payload: dict) -> None:
+    """BaseHTTPRequestHandler 에 JSON 을 써 보낸다. Vercel 과 로컬이 함께 쓴다."""
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request.send_response(status)
+    request.send_header("Content-Type", "application/json; charset=utf-8")
+    request.send_header("Content-Length", str(len(body)))
+    request.end_headers()
+    request.wfile.write(body)
+
+
+def one(query: dict, key: str, default: str = "") -> str:
+    """parse_qs 결과에서 첫 값을 꺼낸다."""
+    values = query.get(key)
+    return values[0] if values else default
+
+
+def _complex_to_dict(item: applyhome.Complex) -> dict:
+    return {
+        "house_manage_no": item.house_manage_no,
+        "pblanc_no": item.pblanc_no,
+        "name": item.name,
+        "notice_date": item.notice_date,
+        "winner_date": item.winner_date,
+        "resale_limit": item.resale_limit,
+    }
+
+
+def search(query: dict) -> tuple[int, dict]:
+    try:
+        page = int(one(query, "page", "1"))
+    except ValueError:
+        page = 1
+    try:
+        complexes, total = applyhome.search_complexes(
+            name=one(query, "name"),
+            area=one(query, "area"),
+            sigungu=one(query, "sigungu"),
+            page=page,
+        )
+    except applyhome.ApplyhomeError as error:
+        return 502, {"message": str(error)}
+    return 200, {"complexes": [_complex_to_dict(c) for c in complexes], "total": total}
+
+
+def dongs(query: dict) -> tuple[int, dict]:
+    hm, pb = one(query, "hm"), one(query, "pb")
+    if not (hm and pb):
+        return 400, {"message": "hm, pb 값이 필요합니다."}
+    try:
+        found = applyhome.list_dongs(hm, pb)
+    except applyhome.ApplyhomeError as error:
+        return 502, {"message": str(error)}
+    return 200, {"dongs": [{"sn": d.sn, "name": d.name} for d in found]}
+
+
+def hos(query: dict) -> tuple[int, dict]:
+    hm, pb = one(query, "hm"), one(query, "pb")
+    if not (hm and pb):
+        return 400, {"message": "hm, pb 값이 필요합니다."}
+    try:
+        sn = int(one(query, "sn"))
+    except ValueError:
+        return 400, {"message": "sn 값이 필요합니다."}
+    try:
+        found = applyhome.list_hos(hm, pb, sn)
+    except applyhome.ApplyhomeError as error:
+        return 502, {"message": str(error)}
+    numbers = [h.no for h in found]
+    return 200, {"hos": numbers, "grid": grid.build_grid(numbers)}
+
+
+def unit(query: dict) -> tuple[int, dict]:
+    """세대 1건. 개별 실패가 스캔을 멈추면 안 되므로 실패해도 200 을 돌려준다."""
+    hm, pb = one(query, "hm"), one(query, "pb")
+    dong, ho = one(query, "dong"), one(query, "ho")
+    if not (hm and pb and dong and ho):
+        return 400, {"message": "hm, pb, dong, ho 값이 모두 필요합니다."}
+    try:
+        found = applyhome.fetch_detail(hm, pb, dong, ho)
+    except applyhome.ApplyhomeError as error:
+        return 200, {"dong": dong, "ho": ho, "status": "error", "fields": {},
+                     "message": str(error)}
+    return 200, {"dong": found.dong, "ho": found.ho,
+                 "status": found.status, "fields": found.fields}
+
+
+def pblanc(query: dict) -> tuple[int, dict]:
+    """공고 타입별 공급세대수. 부가 정보이므로 어떤 실패든 supply=None 으로 넘긴다."""
+    hm, pb = one(query, "hm"), one(query, "pb")
+    if not (hm and pb):
+        return 400, {"message": "hm, pb 값이 필요합니다."}
+    try:
+        types = applyhome.fetch_pblanc_supply(hm, pb)
+    except Exception:
+        return 200, {"supply": None}
+    if not types:
+        return 200, {"supply": None}
+    return 200, {
+        "supply": [
+            {
+                "type": t.house_type,
+                "short": grid.short_type(t.house_type),
+                "net_area": grid.net_area(t.house_type),
+                "area": t.area,
+                "general": t.general,
+                "special": t.special,
+                "total": t.total,
+            }
+            for t in types
+        ]
+    }
+
+
+ROUTES = {
+    "/api/search": search,
+    "/api/dongs": dongs,
+    "/api/hos": hos,
+    "/api/unit": unit,
+    "/api/pblanc": pblanc,
+}
