@@ -10,11 +10,11 @@ import os
 import pathlib
 import sys
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import applyhome
-import scanner
 
 LIVE = os.environ.get("APPLYHOME_LIVE") == "1"
 
@@ -26,14 +26,16 @@ EXPECTED_EMPTY_101 = {"305", "502", "603", "1105", "1401", "1404", "1405", "2004
 class LiveTest(unittest.TestCase):
     def test_상봉_101동_정보없음_10건이_그대로다(self):
         hm, pb = SANGBONG
-        events = []
-        scanner.scan_complex(hm, pb, lambda name, payload: events.append((name, payload)))
+        dongs = applyhome.list_dongs(hm, pb)
+        target = next(d for d in dongs if d.name == "101")
+        hos = applyhome.list_hos(hm, pb, target.sn)
+        self.assertEqual(len(hos), 119, "101동 세대 수가 119가 아닙니다")
 
-        units = [payload for name, payload in events if name == "unit"]
-        dong_101 = [u for u in units if u["dong"] == "101"]
-        self.assertEqual(len(dong_101), 119, "101동 세대 수가 119가 아닙니다")
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            units = list(pool.map(
+                lambda ho: applyhome.fetch_detail(hm, pb, "101", ho.no), hos))
 
-        empties = {u["ho"] for u in dong_101 if u["status"] == "empty"}
+        empties = {u.ho for u in units if u.status == "empty"}
         self.assertEqual(empties, EXPECTED_EMPTY_101)
 
     def test_장위_1001동_201호는_정보가_있다(self):
