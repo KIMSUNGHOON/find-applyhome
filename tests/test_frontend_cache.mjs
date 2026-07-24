@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as cacheModule from "../public/cache.mjs";
 import {
-  POLL_DELAYS_MS, formatCheckedAt, hydrateState, mergeUnits,
-  pollSharedSnapshot, selectUnitJobs, unitKey,
+  POLL_DELAYS_MS, createOperationController, formatCheckedAt, hydrateState,
+  mergeUnits, pollSharedSnapshot, runExclusiveOperation, selectUnitJobs, unitKey,
 } from "../public/cache.mjs";
 
 const snapshot = {
@@ -39,6 +39,78 @@ function loadInlineFunction(name, dependencies = {}) {
   const source = functionSource(name);
   return Function(...names, `"use strict"; ${source}; return ${name};`)(...values);
 }
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+test("진행 중인 scan은 두 번째 scan의 load와 pool을 시작하지 않는다", async () => {
+  const controller = createOperationController();
+  const loadStarted = deferred();
+  const releaseLoad = deferred();
+  let loads = 0;
+  let pools = 0;
+
+  const first = runExclusiveOperation(controller, "scan", async () => {
+    loads += 1;
+    loadStarted.resolve();
+    await releaseLoad.promise;
+    pools += 1;
+    return "first";
+  });
+  await loadStarted.promise;
+
+  const second = await runExclusiveOperation(controller, "scan", async () => {
+    loads += 1;
+    pools += 1;
+    return "second";
+  });
+
+  assert.equal(second, null);
+  assert.equal(loads, 1);
+  assert.equal(pools, 0);
+  releaseLoad.resolve();
+  assert.equal(await first, "first");
+  assert.equal(pools, 1);
+});
+
+test("이전 generation의 늦은 완료는 새 operation을 다시 활성화하지 않는다", async () => {
+  const busyStates = [];
+  const controller = createOperationController((busy) => busyStates.push(busy));
+  const oldOwner = controller.begin("scan");
+  assert.ok(oldOwner);
+  assert.equal(controller.finish(oldOwner), true);
+  const newOwner = controller.begin("retry");
+  assert.ok(newOwner);
+
+  await Promise.resolve();
+  assert.equal(controller.finish(oldOwner), false);
+  assert.equal(controller.isBusy(), true);
+  assert.equal(controller.owns(newOwner), true);
+  assert.deepEqual(busyStates, [true, false, true]);
+});
+
+test("scan이 대기 중이면 retry operation도 시작하지 않는다", async () => {
+  const controller = createOperationController();
+  const scanStarted = deferred();
+  const releaseScan = deferred();
+  let retries = 0;
+  const scan = runExclusiveOperation(controller, "scan", async () => {
+    scanStarted.resolve();
+    await releaseScan.promise;
+  });
+  await scanStarted.promise;
+
+  const retry = await runExclusiveOperation(controller, "retry", async () => {
+    retries += 1;
+  });
+  assert.equal(retry, null);
+  assert.equal(retries, 0);
+  releaseScan.resolve();
+  await scan;
+});
 
 test("snapshot을 기존 state 형태로 옮긴다", () => {
   const state = { meta: null, units: new Map() };
@@ -277,7 +349,102 @@ test("페이지 scanComplex는 검증된 cache-first orchestration을 호출한�
   assert.match(indexHtml, /isAborted:\s*\(\)\s*=>\s*state\.aborted/);
   assert.match(indexHtml, /renderRetry[\s\S]*fetchResolvedUnit\(/);
   assert.match(indexHtml, /scanComplex\(\{ forceFull: true \}\)/);
-  assert.match(indexHtml, /id="cache-status" class="caption"/);
+  assert.match(indexHtml, /runExclusiveOperation\(operationController,\s*"scan"/);
+  assert.match(indexHtml, /runExclusiveOperation\(operationController,\s*"retry"/);
+  assert.match(indexHtml, /id="progress" class="status" role="status" aria-live="polite" aria-atomic="true"/);
+  assert.match(indexHtml, /id="cache-status" class="caption" role="status" aria-live="polite" aria-atomic="true"/);
+  assert.equal(
+    indexHtml.match(/data-operation-region aria-busy="false"/g)?.length,
+    3,
+  );
+  assert.match(indexHtml, /querySelectorAll\("\[data-operation-region\]"\)/);
+});
+
+test("저장 결과에서 operation 중 렌더된 action은 모두 disabled다", () => {
+  const created = [];
+  const bar = { append: (...nodes) => created.push(...nodes) };
+  const list = { prepend: (node) => assert.equal(node, bar) };
+  const document = {
+    createElement: (tag) => tag === "div" ? bar : {
+      className: "",
+      textContent: "",
+      disabled: false,
+      dataset: {},
+      addEventListener: () => {},
+    },
+  };
+  const operationController = { isBusy: () => true };
+  const renderRetry = loadInlineFunction("renderRetry", {
+    document,
+    operationController,
+    retryFailedUnits: () => {},
+  });
+  const renderActions = loadInlineFunction("renderActions", {
+    document,
+    downloadCsv: () => {},
+    operationController,
+    scanComplex: () => {},
+    el: () => list,
+    renderRetry,
+  });
+
+  renderActions({ error: 1 });
+  assert.equal(created.length, 3);
+  assert.ok(created.every((button) => button.disabled));
+  assert.ok(created.every((button) => button.dataset.operationAction === "true"));
+});
+
+test("owner가 끝날 때만 action과 결과 aria-busy를 다시 활성화한다", () => {
+  const regions = Array.from({ length: 3 }, () => ({ busy: "false" }));
+  regions.forEach((region) => {
+    region.setAttribute = (name, value) => {
+      assert.equal(name, "aria-busy");
+      region.busy = value;
+    };
+  });
+  const scanButton = { disabled: false };
+  const stopButton = {
+    hidden: true,
+    classList: { toggle: (name, force) => {
+      assert.equal(name, "hide");
+      stopButton.hidden = force;
+    } },
+  };
+  const action = { disabled: false };
+  const radio = { disabled: false };
+  const document = {
+    querySelectorAll: (selector) => ({
+      "[data-operation-region]": regions,
+      "[data-operation-action]": [action],
+      'input[name="complex"]': [radio],
+    })[selector],
+  };
+  const setOperationBusy = loadInlineFunction("setOperationBusy", {
+    document,
+    state: { complex: {} },
+    el: (id) => id === "scan-button" ? scanButton : stopButton,
+  });
+  const controller = createOperationController(setOperationBusy);
+
+  const oldOwner = controller.begin("scan");
+  assert.ok(regions.every((region) => region.busy === "true"));
+  assert.equal(scanButton.disabled, true);
+  assert.equal(stopButton.hidden, false);
+  assert.equal(action.disabled, true);
+  assert.equal(radio.disabled, true);
+
+  assert.equal(controller.finish(oldOwner), true);
+  const newOwner = controller.begin("retry");
+  assert.equal(controller.finish(oldOwner), false);
+  assert.equal(action.disabled, true);
+  assert.ok(regions.every((region) => region.busy === "true"));
+
+  assert.equal(controller.finish(newOwner), true);
+  assert.equal(scanButton.disabled, false);
+  assert.equal(stopButton.hidden, true);
+  assert.equal(action.disabled, false);
+  assert.equal(radio.disabled, false);
+  assert.ok(regions.every((region) => region.busy === "false"));
 });
 
 test("cache-first orchestration은 저장 상태를 먼저 적용하고 새 topology로 정리한다", async () => {
@@ -401,7 +568,7 @@ test("cache 조회 실패는 현재 topology 전체를 직접 갱신한다", asy
         dongs: [{ name: "101", hos: ["201", "202"], grid: null }],
         supply: null,
       }),
-      fetchSupply: async () => [],
+      fetchSupply: async () => ({ supply: [], refresh_failed: false }),
       fetchUnit: async (job) => {
         requested.push(job);
         return { ...job, status: "info", fields: {} };
@@ -415,6 +582,66 @@ test("cache 조회 실패는 현재 topology 전체를 직접 갱신한다", asy
     { dong: "101", ho: "201" }, { dong: "101", ho: "202" },
   ]);
   assert.equal(state.units.size, 2);
+});
+
+test("cached supply는 명시된 일시적 refresh 실패 때 보존된다", async () => {
+  const body = structuredClone(snapshot);
+  body.cache = "stale";
+  body.meta.supply = [{ type: "084A", total: 10 }];
+  body.refresh.supply = true;
+  body.refresh.units = [];
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+
+  await cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => assert.fail("cached topology must be reused"),
+    fetchSupply: async () => ({ supply: null, refresh_failed: true }),
+    fetchUnit: async () => assert.fail("no unit refresh requested"),
+    runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+  });
+
+  assert.deepEqual(state.meta.supply, [{ type: "084A", total: 10 }]);
+});
+
+test("cached supply는 refresh 호출이 throw해도 보존된다", async () => {
+  const body = structuredClone(snapshot);
+  body.cache = "stale";
+  body.meta.supply = [{ type: "084A", total: 10 }];
+  body.refresh.supply = true;
+  body.refresh.units = [];
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+
+  await cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => assert.fail("cached topology must be reused"),
+    fetchSupply: async () => { throw new Error("upstream timeout"); },
+    fetchUnit: async () => assert.fail("no unit refresh requested"),
+    runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+  });
+
+  assert.deepEqual(state.meta.supply, [{ type: "084A", total: 10 }]);
+});
+
+test("confirmed null supply는 cached supply를 교체한다", async () => {
+  const body = structuredClone(snapshot);
+  body.cache = "stale";
+  body.meta.supply = [{ type: "084A", total: 10 }];
+  body.refresh.supply = true;
+  body.refresh.units = [];
+  const state = { meta: null, units: new Map(), cache: null, aborted: false };
+
+  await cacheModule.runCacheFirstRefresh({
+    state,
+    loadSnapshot: async () => body,
+    fetchTopology: async () => assert.fail("cached topology must be reused"),
+    fetchSupply: async () => ({ supply: null, refresh_failed: false }),
+    fetchUnit: async () => assert.fail("no unit refresh requested"),
+    runJobs: async (jobs, worker) => Promise.all(jobs.map(worker)),
+  });
+
+  assert.equal(state.meta.supply, null);
 });
 
 test("빈 topology 갱신도 prune 뒤 화면 replay를 요청한다", async () => {
@@ -626,17 +853,24 @@ test("직접 retry 결과는 Map 뒤 onUnit과 전체 onDone 순서로 반영한
     complex: { house_manage_no: "hm", pblanc_no: "pb" },
     meta: { total: 1 },
     units: new Map([[unitKey("101", "201"), failed]]),
+    aborted: false,
   };
   const events = [];
+  const progress = { textContent: "완료 · 1세대 · 실패 1건" };
+  const operationController = createOperationController();
   const retryFailedUnits = loadInlineFunction("retryFailedUnits", {
     state,
     unitKey,
+    operationController,
+    runExclusiveOperation,
     fetchResolvedUnit: async () => fresh,
     onUnit: (unit) => {
       assert.equal(state.units.get(unitKey(unit.dong, unit.ho)), fresh);
       events.push("unit");
     },
     summarize: () => ({ total: 1, info: 1, empty: 0, error: 0, elapsed: "1.0" }),
+    completionStatus: (summary) => `완료 · 실패 ${summary.error}건`,
+    el: () => progress,
     onDone: (summary) => events.push(`done:${summary.error}`),
   });
 
@@ -644,6 +878,62 @@ test("직접 retry 결과는 Map 뒤 onUnit과 전체 onDone 순서로 반영한
   assert.equal(state.units.get(unitKey("101", "201")), fresh);
   assert.deepEqual(events, ["unit", "done:0"]);
   assert.equal(updated.error, 0);
+  assert.equal(progress.textContent, "완료 · 실패 0건");
+});
+
+test("bare CR이 든 CSV cell을 quote해 한 data row를 유지한다", () => {
+  const csvCell = loadInlineFunction("csvCell");
+  assert.equal(csvCell("첫줄\r둘째줄"), '"첫줄\r둘째줄"');
+
+  const state = {
+    units: new Map([["unit", {
+      dong: "101",
+      ho: "201",
+      status: "info",
+      fields: { "주택형": "084.8422A", "공급유형": "일반\r공급" },
+    }]]),
+  };
+  const CSV_HEADER = [
+    "동", "호", "타입", "판정", "주택형", "공급유형", "공고일",
+    "당첨자 발표일", "계약체결일", "입주예정", "전매제한", "분양금액(만원)",
+  ];
+  const buildCsv = loadInlineFunction("buildCsv", {
+    CSV_HEADER,
+    STATUS_LABEL: { info: "정보있음" },
+    state,
+    unitFields: (unit) => unit.fields,
+    shortType: () => "84A",
+    csvCell,
+  });
+  const csv = buildCsv().slice(1);
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < csv.length; index += 1) {
+    const char = csv[index];
+    if (char === '"' && quoted && csv[index + 1] === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && csv[index + 1] === "\n") index += 1;
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1].length, CSV_HEADER.length);
+  assert.equal(rows[1][5], "일반\r공급");
 });
 
 test("server full-refresh 거부는 후속 작업 없이 retry_after를 노출한다", async () => {

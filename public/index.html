@@ -161,7 +161,7 @@
 
 <div class="m-stripe"></div>
 
-<div class="wrap">
+<main class="wrap">
 
 <section class="band">
   <h1>청약홈 미계약 세대 스캐너</h1>
@@ -187,8 +187,8 @@
   <div class="row">
     <button id="scan-button" class="btn" disabled>Scan</button>
     <button id="stop-button" class="btn hide">Stop</button>
-    <span id="progress" class="status"></span>
-    <span id="cache-status" class="caption"></span>
+    <span id="progress" class="status" role="status" aria-live="polite" aria-atomic="true"></span>
+    <span id="cache-status" class="caption" role="status" aria-live="polite" aria-atomic="true"></span>
   </div>
 </section>
 
@@ -199,11 +199,11 @@
   </div>
 </section>
 
-<section class="band" id="summary-band"><div id="summary"></div></section>
-<section class="band"><div id="grids"></div></section>
-<section class="band"><div id="empty-list"></div></section>
+<section class="band" id="summary-band"><div id="summary" data-operation-region aria-busy="false"></div></section>
+<section class="band"><div id="grids" data-operation-region aria-busy="false"></div></section>
+<section class="band"><div id="empty-list" data-operation-region aria-busy="false"></div></section>
 
-</div>
+</main>
 
 <div id="detail"></div>
 
@@ -213,7 +213,8 @@
 
 <script type="module">
 import {
-  formatCheckedAt, resolveUnitRequest, runCacheFirstRefresh, unitKey,
+  createOperationController, formatCheckedAt, resolveUnitRequest,
+  runCacheFirstRefresh, runExclusiveOperation, unitKey,
 } from "/cache.mjs";
 
 const AREAS = ["강원","경기","경남","경북","광주","대구","대전","부산","서울","세종",
@@ -225,6 +226,7 @@ const state = {
   cache: { status: "disabled", checkedAt: null },
   search: { name: "", area: "", page: 1, loaded: 0, total: 0 },
 };
+const operationController = createOperationController(setOperationBusy);
 
 // 주택형 "084.8422A" → 표기 "84A", 전용면적 "84.8422".
 // grid.py 의 short_type / net_area 와 같은 규칙이다. 한쪽만 고치면 화면 표기가 어긋난다.
@@ -300,11 +302,12 @@ function renderResults(body) {
     const radio = document.createElement("input");
     radio.type = "radio";
     radio.name = "complex";
+    radio.disabled = operationController.isBusy();
     radio.addEventListener("change", () => {
       document.querySelectorAll(".pick.on").forEach((n) => n.classList.remove("on"));
       label.classList.add("on");
       state.complex = item;
-      el("scan-button").disabled = false;
+      el("scan-button").disabled = operationController.isBusy();
     });
 
     const name = document.createElement("span");
@@ -388,6 +391,12 @@ function summarize(elapsed = "0.0") {
   return { total: state.meta?.total || 0, ...tally, elapsed };
 }
 
+function completionStatus(summary) {
+  return `완료 · ${summary.total}세대 중 정보없음 ${summary.empty}건` +
+    (summary.error ? ` · 실패 ${summary.error}건` : "") +
+    ` (${summary.elapsed}초)`;
+}
+
 function renderStoredSnapshot(snapshot) {
   renderCacheStatus(snapshot);
   onMeta(state.meta);
@@ -413,77 +422,75 @@ function renderCacheStatus(snapshot) {
 }
 
 async function scanComplex({ forceFull = false } = {}) {
-  if (!state.complex) return;
-  state.meta = null;
-  state.units = new Map();
-  state.aborted = false;
-  el("grids").innerHTML = "";
-  el("summary").innerHTML = "";
-  el("empty-list").innerHTML = "";
-  el("detail").innerHTML = "";
-  el("notice-band").classList.add("hide");
-  el("cache-status").textContent = "";
-  el("scan-button").disabled = true;
-  el("stop-button").classList.remove("hide");
+  if (!state.complex) return null;
+  return runExclusiveOperation(operationController, "scan", async (owner) => {
+    state.meta = null;
+    state.units = new Map();
+    state.aborted = false;
+    el("grids").innerHTML = "";
+    el("summary").innerHTML = "";
+    el("empty-list").innerHTML = "";
+    el("detail").innerHTML = "";
+    el("notice-band").classList.add("hide");
+    el("cache-status").textContent = "";
 
-  const hm = state.complex.house_manage_no;
-  const pb = state.complex.pblanc_no;
-  const started = Date.now();
-  try {
-    const result = await runCacheFirstRefresh({
-      state,
-      forceFull,
-      loadSnapshot: async () => {
-        const snapshot = await getJson("/api/cache", {
-          hm, pb, ...(forceFull ? { refresh: "full" } : {}),
-        });
-        renderCacheStatus(snapshot);
-        return snapshot;
-      },
-      fetchTopology: () => fetchTopology(hm, pb),
-      fetchSupply: () => getJson("/api/pblanc", { hm, pb })
-        .then((body) => body.supply).catch(() => null),
-      fetchUnit: (job) => fetchResolvedUnit(hm, pb, job),
-      runJobs: runPool,
-      onStored: renderStoredSnapshot,
-      onTopology: () => {
-        el("grids").innerHTML = "";
-        onMeta(state.meta);
-        state.units.forEach(onUnit);
-      },
-      onUnit,
-      onProgress: ({ updated, total }) => {
+    const hm = state.complex.house_manage_no;
+    const pb = state.complex.pblanc_no;
+    const started = Date.now();
+    try {
+      const result = await runCacheFirstRefresh({
+        state,
+        forceFull,
+        loadSnapshot: async () => {
+          const snapshot = await getJson("/api/cache", {
+            hm, pb, ...(forceFull ? { refresh: "full" } : {}),
+          });
+          renderCacheStatus(snapshot);
+          return snapshot;
+        },
+        fetchTopology: () => fetchTopology(hm, pb),
+        fetchSupply: () => getJson("/api/pblanc", { hm, pb }),
+        fetchUnit: (job) => fetchResolvedUnit(hm, pb, job),
+        runJobs: runPool,
+        onStored: renderStoredSnapshot,
+        onTopology: () => {
+          el("grids").innerHTML = "";
+          onMeta(state.meta);
+          state.units.forEach(onUnit);
+        },
+        onUnit,
+        onProgress: ({ updated, total }) => {
+          if (!operationController.owns(owner)) return;
+          el("progress").textContent =
+            `저장된 결과 ${state.units.size} / ${state.meta.total} · 업데이트 ${updated} / ${total}`;
+        },
+      });
+      if (!operationController.owns(owner)) return null;
+      renderCacheStatus(result.snapshot);
+
+      if (result.status === "blocked") {
         el("progress").textContent =
-          `저장된 결과 ${state.units.size} / ${state.meta.total} · 업데이트 ${updated} / ${total}`;
-      },
-    });
-    renderCacheStatus(result.snapshot);
-
-    if (result.status === "blocked") {
-      el("progress").textContent =
-        `다른 방문자가 업데이트 중입니다 · ${result.snapshot.full_refresh.retry_after}초 뒤 전체 새로고침 가능`;
-      return;
+          `다른 방문자가 업데이트 중입니다 · ${result.snapshot.full_refresh.retry_after}초 뒤 전체 새로고침 가능`;
+        return result;
+      }
+      if (result.status === "fresh") return result;
+      if (result.status === "aborted") {
+        el("progress").textContent = `중단됨 · ${state.units.size}세대까지 저장`;
+        return result;
+      }
+      if (result.status === "empty") {
+        el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
+        return result;
+      }
+      const summary = summarize(((Date.now() - started) / 1000).toFixed(1));
+      el("progress").textContent = completionStatus(summary);
+      onDone(summary);
+      return result;
+    } catch (error) {
+      if (operationController.owns(owner)) el("progress").textContent = error.message;
+      return null;
     }
-    if (result.status === "fresh") return;
-    if (result.status === "aborted") {
-      el("progress").textContent = `중단됨 · ${state.units.size}세대까지 저장`;
-      return;
-    }
-    if (result.status === "empty") {
-      el("progress").textContent = "이 단지는 아직 분양권 정보가 등록되지 않았습니다.";
-      return;
-    }
-    const summary = summarize(((Date.now() - started) / 1000).toFixed(1));
-    el("progress").textContent =
-      `완료 · ${summary.total}세대 중 정보없음 ${summary.empty}건` +
-      (summary.error ? ` · 실패 ${summary.error}건` : "") +
-      ` (${summary.elapsed}초)`;
-    onDone(summary);
-  } catch (error) {
-    el("progress").textContent = error.message;
-  } finally {
-    finishScan();
-  }
+  });
 }
 
 el("scan-button").addEventListener("click", () => scanComplex());
@@ -493,9 +500,18 @@ el("stop-button").addEventListener("click", () => {
   el("progress").textContent = `중단하는 중… (${state.units.size}세대까지 조회)`;
 });
 
-function finishScan() {
-  el("scan-button").disabled = false;
-  el("stop-button").classList.add("hide");
+function setOperationBusy(busy) {
+  document.querySelectorAll("[data-operation-region]").forEach((region) => {
+    region.setAttribute("aria-busy", String(busy));
+  });
+  el("scan-button").disabled = busy || !state.complex;
+  el("stop-button").classList.toggle("hide", !busy);
+  document.querySelectorAll("[data-operation-action]").forEach((button) => {
+    button.disabled = busy;
+  });
+  document.querySelectorAll('input[name="complex"]').forEach((radio) => {
+    radio.disabled = busy;
+  });
 }
 
 function cellId(dong, ho) { return `c-${dong}-${ho}`; }
@@ -719,7 +735,7 @@ const STATUS_LABEL = { info: "정보있음", empty: "정보없음", error: "조�
 
 function csvCell(value) {
   const text = String(value ?? "");
-  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function buildCsv() {
@@ -757,12 +773,16 @@ function renderActions(summary) {
   const button = document.createElement("button");
   button.className = "btn";
   button.textContent = "CSV Download";
+  button.dataset.operationAction = "true";
+  button.disabled = operationController.isBusy();
   button.addEventListener("click", downloadCsv);
   bar.append(button);
 
   const refresh = document.createElement("button");
   refresh.className = "btn";
   refresh.textContent = "전체 새로고침";
+  refresh.dataset.operationAction = "true";
+  refresh.disabled = operationController.isBusy();
   refresh.addEventListener("click", () => scanComplex({ forceFull: true }));
   bar.append(refresh);
 
@@ -774,33 +794,42 @@ function renderRetry(summary, bar) {
   const button = document.createElement("button");
   button.className = "btn";
   button.textContent = `Retry ${summary.error}`;
+  button.dataset.operationAction = "true";
+  button.disabled = operationController.isBusy();
   button.addEventListener("click", async () => {
-    button.disabled = true;
-    button.textContent = "Retrying…";
     await retryFailedUnits(summary);
   });
   bar.append(button);
 }
 
 async function retryFailedUnits(summary) {
-  const failed = [...state.units.values()].filter((unit) => unit.status === "error");
-  for (const unit of failed) {
-    try {
-      const fresh = await fetchResolvedUnit(
-        state.complex.house_manage_no,
-        state.complex.pblanc_no,
-        unit,
-      );
-      if (!fresh || state.aborted) continue;
-      state.units.set(unitKey(fresh.dong, fresh.ho), fresh);
-      onUnit(fresh);
-    } catch (error) {
-      // 이 세대는 그대로 두고 다음으로 넘어간다
+  return runExclusiveOperation(operationController, "retry", async (owner) => {
+    state.aborted = false;
+    el("progress").textContent = `실패 ${summary.error}건 재시도 중…`;
+    const failed = [...state.units.values()].filter((unit) => unit.status === "error");
+    for (const unit of failed) {
+      if (state.aborted || !operationController.owns(owner)) break;
+      try {
+        const fresh = await fetchResolvedUnit(
+          state.complex.house_manage_no,
+          state.complex.pblanc_no,
+          unit,
+        );
+        if (!fresh || state.aborted || !operationController.owns(owner)) continue;
+        state.units.set(unitKey(fresh.dong, fresh.ho), fresh);
+        onUnit(fresh);
+      } catch (error) {
+        // 이 세대는 그대로 두고 다음으로 넘어간다
+      }
     }
-  }
-  const updated = summarize(summary.elapsed);
-  onDone(updated);
-  return updated;
+    if (!operationController.owns(owner)) return null;
+    const updated = summarize(summary.elapsed);
+    el("progress").textContent = state.aborted
+      ? `중단됨 · ${state.units.size}세대까지 저장`
+      : completionStatus(updated);
+    onDone(updated);
+    return updated;
+  });
 }
 
 function renderLegend(summary) {

@@ -47,6 +47,42 @@ export function pruneUnits(units, jobs) {
 
 const noop = () => {};
 
+export function createOperationController(onBusyChange = noop) {
+  let generation = 0;
+  let activeOwner = null;
+
+  return Object.freeze({
+    begin(kind) {
+      if (activeOwner) return null;
+      activeOwner = Object.freeze({ generation: ++generation, kind });
+      onBusyChange(true, activeOwner);
+      return activeOwner;
+    },
+    finish(owner) {
+      if (owner !== activeOwner) return false;
+      activeOwner = null;
+      onBusyChange(false, owner);
+      return true;
+    },
+    owns(owner) {
+      return owner === activeOwner;
+    },
+    isBusy() {
+      return activeOwner !== null;
+    },
+  });
+}
+
+export async function runExclusiveOperation(controller, kind, operation) {
+  const owner = controller.begin(kind);
+  if (!owner) return null;
+  try {
+    return await operation(owner);
+  } finally {
+    controller.finish(owner);
+  }
+}
+
 function disabledSnapshot() {
   return {
     cache: "disabled", complete: false, checked_at: null, meta: null, units: [],
@@ -110,7 +146,15 @@ export async function runCacheFirstRefresh({
     return { status: "empty", snapshot, jobs: [], updated: 0 };
   }
   if (snapshot.refresh.supply || forceFull || state.meta.supply === null) {
-    state.meta.supply = await fetchSupply();
+    try {
+      const refreshed = await fetchSupply();
+      if (state.aborted) {
+        return { status: "aborted", snapshot, jobs: [], updated: 0 };
+      }
+      if (!refreshed?.refresh_failed) state.meta.supply = refreshed?.supply ?? null;
+    } catch (error) {
+      // 공급 정보는 부가 데이터다. 일시적 실패에는 저장된 값을 유지한다.
+    }
   }
 
   const allJobs = jobsFromMeta(state.meta);

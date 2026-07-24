@@ -157,14 +157,14 @@ def unit(query: dict) -> tuple[int, dict]:
 
 
 def pblanc(query: dict) -> tuple[int, dict]:
-    """공고 타입별 공급세대수. 부가 정보이므로 어떤 실패든 supply=None 으로 넘긴다."""
+    """공고 타입별 공급세대수. 실패 여부를 분리하면서 200 fail-open을 유지한다."""
     hm, pb = one(query, "hm"), one(query, "pb")
     if not (hm and pb):
         return 400, {"message": "hm, pb 값이 필요합니다."}
     try:
         types = applyhome.fetch_pblanc_supply(hm, pb)
     except Exception:
-        return 200, {"supply": None}
+        return 200, {"supply": None, "refresh_failed": True}
     supply = [
         {
             "type": item.house_type,
@@ -177,7 +177,7 @@ def pblanc(query: dict) -> tuple[int, dict]:
         }
         for item in types
     ] or None
-    payload = {"supply": supply}
+    payload = {"supply": supply, "refresh_failed": False}
     _cache_call("write_supply", hm, pb, supply)
     return 200, payload
 

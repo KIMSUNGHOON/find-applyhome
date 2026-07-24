@@ -171,11 +171,13 @@ class PblancTest(unittest.TestCase):
         self.assertEqual(s["short"], "84A")
         self.assertEqual(s["net_area"], "84.8422")
         self.assertEqual((s["general"], s["special"], s["total"]), (22, 23, 45))
+        self.assertFalse(body["refresh_failed"])
 
     def test_공고가_없으면_supply가_None이다(self):
         applyhome.fetch_pblanc_supply = lambda hm, pb: []
         _, body = _lib.pblanc(q(hm="1", pb="1"))
         self.assertIsNone(body["supply"])
+        self.assertFalse(body["refresh_failed"])
 
     def test_조회가_터져도_supply가_None이고_200이다(self):
         # 공고는 부가 정보다. 실패해도 스캔을 막지 않는다
@@ -183,6 +185,7 @@ class PblancTest(unittest.TestCase):
         status, body = _lib.pblanc(q(hm="1", pb="1"))
         self.assertEqual(status, 200)
         self.assertIsNone(body["supply"])
+        self.assertTrue(body["refresh_failed"])
 
 
 class FakeCache:
@@ -332,6 +335,7 @@ class CacheIntegrationTest(unittest.TestCase):
             applyhome.fetch_pblanc_supply = original
         self.assertEqual(status, 200)
         self.assertIsNone(body["supply"])
+        self.assertTrue(body["refresh_failed"])
         self.assertFalse(any(call[0] == "write_supply" for call in self.cache.calls))
 
     def test_pblanc_성공_빈_결과는_None을_cache에_쓴다(self):
@@ -343,6 +347,7 @@ class CacheIntegrationTest(unittest.TestCase):
             applyhome.fetch_pblanc_supply = original
         self.assertEqual(status, 200)
         self.assertIsNone(body["supply"])
+        self.assertFalse(body["refresh_failed"])
         self.assertIn(("write_supply", "1", "2", None), self.cache.calls)
 
     def test_unit_잠금_경합과_기존값은_200_refreshing이다(self):
