@@ -1,8 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   LAST_VISIT_KEY, applyVisits, formatVisits, readLastDate, saveLastDate,
 } from "../public/visits.mjs";
+
+const indexHtml = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
 
 function memoryStorage(initial = {}) {
   const data = new Map(Object.entries(initial));
@@ -63,4 +66,16 @@ test("세지 못했으면 날짜를 저장하지 않는다", () => {
   const storage = memoryStorage();
   assert.equal(applyVisits(storage, { today: null, day: null, total: null }), null);
   assert.equal(storage.read(LAST_VISIT_KEY), undefined);
+});
+
+test("footer 에 감춰진 방문자 span 이 있다", () => {
+  const start = indexHtml.indexOf('<div class="footer-meta">');
+  assert.notEqual(start, -1);
+  const meta = indexHtml.slice(start, indexHtml.indexOf("</div>", start));
+  assert.match(meta, /<span id="visits" class="hide">방문 <span id="visits-text"><\/span><\/span>/);
+});
+
+test("방문자 모듈을 불러와 페이지 로드 때 부른다", () => {
+  assert.match(indexHtml, /from "\/visits\.mjs"/);
+  assert.match(indexHtml, /\/api\/visits\?/);
 });
