@@ -401,8 +401,70 @@ class CacheIntegrationTest(unittest.TestCase):
         self.assertIn(("release_unit", "owner"), self.cache.calls)
 
 
+class VisitsTest(unittest.TestCase):
+    def setUp(self):
+        self.original_cache = _lib.CACHE
+        self.calls = []
+        outer = self
+
+        class Counter:
+            def count_visit(self, last):
+                outer.calls.append(last)
+                return {"today": "2026-08-04", "day": 12, "total": 3456}
+
+        _lib.CACHE = Counter()
+
+    def tearDown(self):
+        _lib.CACHE = self.original_cache
+
+    def test_방문자_수를_돌려준다(self):
+        status, body = _lib.visits(q(last="2026-08-03"))
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"today": "2026-08-04", "day": 12, "total": 3456})
+        self.assertEqual(self.calls, ["2026-08-03"])
+
+    def test_last가_없어도_동작한다(self):
+        status, body = _lib.visits({})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.calls, [""])
+
+    def test_지나치게_긴_last는_빈_값으로_취급한다(self):
+        _lib.visits(q(last="x" * 33))
+        self.assertEqual(self.calls, [""])
+
+    def test_경계인_32자는_그대로_넘긴다(self):
+        _lib.visits(q(last="x" * 32))
+        self.assertEqual(self.calls, ["x" * 32])
+
+    def test_cache가_없으면_값이_모두_None이다(self):
+        _lib.CACHE = None
+        status, body = _lib.visits(q(last="2026-08-03"))
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"today": None, "day": None, "total": None})
+
+    def test_cache_예외는_값이_모두_None이다(self):
+        class Broken:
+            def count_visit(self, last):
+                raise RuntimeError("redis secret detail")
+
+        _lib.CACHE = Broken()
+        status, body = _lib.visits(q(last="2026-08-03"))
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"today": None, "day": None, "total": None})
+
+    def test_count_visit이_None이면_값이_모두_None이다(self):
+        class Empty:
+            def count_visit(self, last):
+                return None
+
+        _lib.CACHE = Empty()
+        status, body = _lib.visits(q(last="2026-08-03"))
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"today": None, "day": None, "total": None})
+
+
 class RoutesTest(unittest.TestCase):
-    def test_여섯_경로가_등록되어_있다(self):
+    def test_일곱_경로가_등록되어_있다(self):
         self.assertEqual(
             set(_lib.ROUTES),
             {
@@ -412,6 +474,7 @@ class RoutesTest(unittest.TestCase):
                 "/api/unit",
                 "/api/pblanc",
                 "/api/cache",
+                "/api/visits",
             },
         )
 

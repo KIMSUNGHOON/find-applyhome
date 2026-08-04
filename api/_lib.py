@@ -229,6 +229,24 @@ def cache_snapshot(query: dict) -> tuple[int, dict]:
     return 200, body
 
 
+# last 는 비교에만 쓰지만 무한정 긴 값을 그대로 다룰 이유는 없다.
+VISIT_LAST_MAX = 32
+
+
+def visits(query: dict) -> tuple[int, dict]:
+    """방문자 수. 부가 정보이므로 어떤 실패든 세 값을 None 으로 돌려준다.
+
+    화면은 값이 None 이면 숫자를 감춘 채로 둔다. 카운터는 스캔에 영향을 주지 않는다.
+    """
+    last = one(query, "last")
+    if len(last) > VISIT_LAST_MAX:
+        last = ""
+    counted = _cache_call("count_visit", last)
+    if not counted:
+        return 200, {"today": None, "day": None, "total": None}
+    return 200, counted
+
+
 ROUTES = {
     "/api/search": search,
     "/api/dongs": dongs,
@@ -236,4 +254,5 @@ ROUTES = {
     "/api/unit": unit,
     "/api/pblanc": pblanc,
     "/api/cache": cache_snapshot,
+    "/api/visits": visits,
 }

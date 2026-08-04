@@ -72,7 +72,7 @@ class RoutingTest(unittest.TestCase):
             self.get("/api/nope")
         self.assertEqual(caught.exception.code, 404)
 
-    def test_여섯_API_경로가_모두_연결되어_있다(self):
+    def test_일곱_API_경로가_모두_연결되어_있다(self):
         self.assertEqual(
             set(_lib.ROUTES),
             {
@@ -82,6 +82,7 @@ class RoutingTest(unittest.TestCase):
                 "/api/unit",
                 "/api/pblanc",
                 "/api/cache",
+                "/api/visits",
             },
         )
 
