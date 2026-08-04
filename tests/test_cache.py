@@ -265,6 +265,54 @@ class FakeTransport:
         return result
 
 
+class CountVisitTest(unittest.TestCase):
+    def store(self, transport):
+        return _cache.CacheStore(transport, now=lambda: VISIT_NOW)
+
+    def test_어제_방문자는_오늘_처음이라_1을_더한다(self):
+        transport = FakeTransport([[3456, 12, 1]])
+        result = self.store(transport).count_visit("2026-08-03")
+        self.assertEqual(result, {"today": "2026-08-04", "day": 12, "total": 3456})
+        self.assertEqual(transport.calls[0], [
+            ["INCRBY", "visits:total", 1],
+            ["INCRBY", "visits:day:2026-08-04", 1],
+            ["EXPIRE", "visits:day:2026-08-04", 172800],
+        ])
+
+    def test_오늘_이미_센_방문자는_0을_더한다(self):
+        transport = FakeTransport([[3456, 12, 1]])
+        result = self.store(transport).count_visit("2026-08-04")
+        self.assertEqual(result, {"today": "2026-08-04", "day": 12, "total": 3456})
+        self.assertEqual(transport.calls[0], [
+            ["INCRBY", "visits:total", 0],
+            ["INCRBY", "visits:day:2026-08-04", 0],
+            ["EXPIRE", "visits:day:2026-08-04", 172800],
+        ])
+
+    def test_last가_없으면_새_방문자로_센다(self):
+        transport = FakeTransport([[1, 1, 1]])
+        self.store(transport).count_visit("")
+        self.assertEqual(transport.calls[0][0][2], 1)
+
+    def test_이상한_last는_키를_오염시키지_않는다(self):
+        transport = FakeTransport([[1, 1, 1]])
+        self.store(transport).count_visit("../../etc/passwd")
+        self.assertEqual(transport.calls[0][1][1], "visits:day:2026-08-04")
+        self.assertEqual(transport.calls[0][0][2], 1)
+
+    def test_Redis가_죽으면_None이다(self):
+        transport = FakeTransport([_cache.CacheUnavailable("down")])
+        self.assertIsNone(self.store(transport).count_visit("2026-08-03"))
+
+    def test_형식이_어긋난_응답은_None이다(self):
+        transport = FakeTransport([[None, None, 1]])
+        self.assertIsNone(self.store(transport).count_visit("2026-08-03"))
+
+    def test_응답_개수가_모자라면_None이다(self):
+        transport = FakeTransport([[3456]])
+        self.assertIsNone(self.store(transport).count_visit("2026-08-03"))
+
+
 class LeaseRaceTransport:
     """호실 잠금과 Hash 한 필드만 실제 Redis처럼 유지하는 테스트 전송 계층."""
 

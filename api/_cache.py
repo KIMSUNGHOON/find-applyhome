@@ -554,3 +554,22 @@ class CacheStore:
         saved["checked_at"] = self.now()
         self._write_unit(hm, pb, dong, ho, saved, token)
         return saved
+
+    def count_visit(self, last: str = "") -> dict | None:
+        """방문을 센다. last 가 KST 오늘과 다르면 1을 더하고, 같으면 현재 값만 읽는다.
+
+        INCRBY 0 은 값을 바꾸지 않고 현재 값을 돌려주므로 신규와 재방문이 한 경로로 합쳐진다.
+        키는 서버 시계로만 만든다. last 는 비교에만 쓰므로 어떤 값이 와도 키를 오염시키지 못한다.
+        """
+        today = kst_date(self.now())
+        increment = 0 if last == today else 1
+        day_key = visit_day_key(today)
+        try:
+            total, day, _ = self.transport.pipeline([
+                ["INCRBY", VISITS_TOTAL_KEY, increment],
+                ["INCRBY", day_key, increment],
+                ["EXPIRE", day_key, VISITS_DAY_TTL],
+            ])
+            return {"today": today, "day": int(day), "total": int(total)}
+        except (CacheUnavailable, TypeError, ValueError):
+            return None
