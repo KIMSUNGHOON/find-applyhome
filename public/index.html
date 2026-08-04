@@ -231,6 +231,7 @@
       target="_blank" rel="noopener noreferrer">KIMSUNGHOON/find-applyhome</a></span>
     <span>개발자 <a href="https://github.com/KIMSUNGHOON"
       target="_blank" rel="noopener noreferrer">Seonghun Kim · @KIMSUNGHOON</a></span>
+    <span id="visits" class="hide">방문 <span id="visits-text"></span></span>
   </div>
 </footer>
 
@@ -239,6 +240,7 @@ import {
   createOperationController, formatCheckedAt, resolveUnitRequest,
   runCacheFirstRefresh, runExclusiveOperation, unitKey,
 } from "/cache.mjs";
+import { applyVisits, openStorage, readLastDate } from "/visits.mjs";
 
 const AREAS = ["강원","경기","경남","경북","광주","대구","대전","부산","서울","세종",
                "울산","인천","전남","전북","제주","충남","충북"];
@@ -273,6 +275,21 @@ AREAS.forEach((name) => {
   option.value = option.textContent = name;
   el("area").append(option);
 });
+
+// 방문자 수는 부가 정보다. 어떤 실패든 조용히 감춘 채로 두고 스캔에는 영향을 주지 않는다.
+(async () => {
+  try {
+    const storage = openStorage(window);
+    const params = new URLSearchParams({ last: readLastDate(storage) });
+    const payload = await (await fetch("/api/visits?" + params)).json();
+    const text = applyVisits(storage, payload);
+    if (text === null) return;
+    el("visits-text").textContent = text;
+    el("visits").classList.remove("hide");
+  } catch {
+    // 카운터가 죽어도 화면의 나머지는 그대로 동작해야 한다
+  }
+})();
 
 el("search-form").addEventListener("submit", (event) => {
   event.preventDefault();

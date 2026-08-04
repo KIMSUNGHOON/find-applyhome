@@ -13,6 +13,11 @@ NOW = 1_784_871_000
 DAY = 24 * 60 * 60
 WEEK = 7 * DAY
 
+# 2026-08-03T15:00:00Z 가 KST 2026-08-04T00:00:00 이다. 경계 직전은 1초 뒤가 아니라 1초 앞이다.
+VISIT_NOW = 1785812400          # 2026-08-04 12:00 KST
+KST_MIDNIGHT = 1785769200       # 2026-08-04 00:00 KST
+KST_BEFORE_MIDNIGHT = 1785769199  # 2026-08-03 23:59:59 KST
+
 
 def encoded(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -40,6 +45,24 @@ def complete_raw(unit_status="info", unit_checked_at=NOW):
             "checked_at": unit_checked_at,
         }),
     }
+
+
+class KstDateTest(unittest.TestCase):
+    def test_UTC_15시가_되면_KST_다음날이다(self):
+        self.assertEqual(_cache.kst_date(KST_MIDNIGHT), "2026-08-04")
+
+    def test_UTC_15시_직전은_KST_같은날이다(self):
+        self.assertEqual(_cache.kst_date(KST_BEFORE_MIDNIGHT), "2026-08-03")
+
+    def test_낮_시각도_같은_날짜다(self):
+        self.assertEqual(_cache.kst_date(VISIT_NOW), "2026-08-04")
+
+    def test_날짜키는_KST_날짜로_만든다(self):
+        self.assertEqual(_cache.visit_day_key("2026-08-04"), "visits:day:2026-08-04")
+
+    def test_길이가_어긋난_날짜는_거부한다(self):
+        with self.assertRaises(ValueError):
+            _cache.visit_day_key("2026-08-04T00:00:00")
 
 
 class KeySchemaTest(unittest.TestCase):
@@ -240,6 +263,54 @@ class FakeTransport:
         if isinstance(result, Exception):
             raise result
         return result
+
+
+class CountVisitTest(unittest.TestCase):
+    def store(self, transport):
+        return _cache.CacheStore(transport, now=lambda: VISIT_NOW)
+
+    def test_어제_방문자는_오늘_처음이라_1을_더한다(self):
+        transport = FakeTransport([[3456, 12, 1]])
+        result = self.store(transport).count_visit("2026-08-03")
+        self.assertEqual(result, {"today": "2026-08-04", "day": 12, "total": 3456})
+        self.assertEqual(transport.calls[0], [
+            ["INCRBY", "visits:total", 1],
+            ["INCRBY", "visits:day:2026-08-04", 1],
+            ["EXPIRE", "visits:day:2026-08-04", 172800],
+        ])
+
+    def test_오늘_이미_센_방문자는_0을_더한다(self):
+        transport = FakeTransport([[3456, 12, 1]])
+        result = self.store(transport).count_visit("2026-08-04")
+        self.assertEqual(result, {"today": "2026-08-04", "day": 12, "total": 3456})
+        self.assertEqual(transport.calls[0], [
+            ["INCRBY", "visits:total", 0],
+            ["INCRBY", "visits:day:2026-08-04", 0],
+            ["EXPIRE", "visits:day:2026-08-04", 172800],
+        ])
+
+    def test_last가_없으면_새_방문자로_센다(self):
+        transport = FakeTransport([[1, 1, 1]])
+        self.store(transport).count_visit("")
+        self.assertEqual(transport.calls[0][0][2], 1)
+
+    def test_이상한_last는_키를_오염시키지_않는다(self):
+        transport = FakeTransport([[1, 1, 1]])
+        self.store(transport).count_visit("../../etc/passwd")
+        self.assertEqual(transport.calls[0][1][1], "visits:day:2026-08-04")
+        self.assertEqual(transport.calls[0][0][2], 1)
+
+    def test_Redis가_죽으면_None이다(self):
+        transport = FakeTransport([_cache.CacheUnavailable("down")])
+        self.assertIsNone(self.store(transport).count_visit("2026-08-03"))
+
+    def test_형식이_어긋난_응답은_None이다(self):
+        transport = FakeTransport([[None, None, 1]])
+        self.assertIsNone(self.store(transport).count_visit("2026-08-03"))
+
+    def test_응답_개수가_모자라면_None이다(self):
+        transport = FakeTransport([[3456]])
+        self.assertIsNone(self.store(transport).count_visit("2026-08-03"))
 
 
 class LeaseRaceTransport:

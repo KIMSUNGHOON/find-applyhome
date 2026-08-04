@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import time
@@ -18,6 +19,12 @@ UNIT_LOCK_TTL = 30
 REDIS_TIMEOUT = 2.0
 CIRCUIT_BREAKER_SECONDS = 60.0
 UNIT_STATUSES = frozenset({"info", "empty", "error"})
+
+# Vercel 함수는 UTC 로 돈다. 그냥 두면 한국 사용자에게 "오늘" 이 오전 9시에 바뀐다.
+# 한국은 서머타임이 없으므로 고정 +9 오프셋이 정확하다.
+KST = datetime.timezone(datetime.timedelta(hours=9))
+VISITS_TOTAL_KEY = "visits:total"
+VISITS_DAY_TTL = 2 * DAY_SECONDS
 
 
 @dataclass(frozen=True)
@@ -102,6 +109,16 @@ def _part(value: object, limit: int = 64) -> str:
 
 def complex_key(hm: str, pb: str) -> str:
     return f"scan:v1:{_part(hm, 32)}:{_part(pb, 32)}"
+
+
+def kst_date(now: float) -> str:
+    """UTC epoch 를 KST 날짜 문자열로 바꾼다."""
+    return datetime.datetime.fromtimestamp(now, KST).strftime("%Y-%m-%d")
+
+
+def visit_day_key(date: str) -> str:
+    """날짜별 방문자 키. kst_date() 가 돌려준 값만 받는다."""
+    return f"visits:day:{_part(date, 10)}"
 
 
 def topology_field(sn: object) -> str:
@@ -537,3 +554,22 @@ class CacheStore:
         saved["checked_at"] = self.now()
         self._write_unit(hm, pb, dong, ho, saved, token)
         return saved
+
+    def count_visit(self, last: str = "") -> dict | None:
+        """방문을 센다. last 가 KST 오늘과 다르면 1을 더하고, 같으면 현재 값만 읽는다.
+
+        INCRBY 0 은 값을 바꾸지 않고 현재 값을 돌려주므로 신규와 재방문이 한 경로로 합쳐진다.
+        키는 서버 시계로만 만든다. last 는 비교에만 쓰므로 어떤 값이 와도 키를 오염시키지 못한다.
+        """
+        today = kst_date(self.now())
+        increment = 0 if last == today else 1
+        day_key = visit_day_key(today)
+        try:
+            total, day, _ = self.transport.pipeline([
+                ["INCRBY", VISITS_TOTAL_KEY, increment],
+                ["INCRBY", day_key, increment],
+                ["EXPIRE", day_key, VISITS_DAY_TTL],
+            ])
+            return {"today": today, "day": int(day), "total": int(total)}
+        except (CacheUnavailable, TypeError, ValueError):
+            return None

@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 import sys
 import threading
 import unittest
@@ -67,12 +68,27 @@ class RoutingTest(unittest.TestCase):
             self.assertEqual(response.headers.get_content_type(), "text/javascript")
             self.assertIn("selectUnitJobs", response.read().decode("utf-8"))
 
+    def test_visits_module을_javascript로_준다(self):
+        url = f"http://127.0.0.1:{self.port}/visits.mjs"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            self.assertEqual(response.headers.get_content_type(), "text/javascript")
+            self.assertIn("applyVisits", response.read().decode("utf-8"))
+
+    def test_index가_import하는_모듈이_모두_서빙된다(self):
+        html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+        modules = set(re.findall(r'from "(/[^"]+\.mjs)"', html))
+        self.assertTrue(modules)
+        for path in modules:
+            with self.subTest(path=path):
+                status, _ = self.get(path)
+                self.assertEqual(status, 200)
+
     def test_없는_경로는_404다(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.get("/api/nope")
         self.assertEqual(caught.exception.code, 404)
 
-    def test_여섯_API_경로가_모두_연결되어_있다(self):
+    def test_일곱_API_경로가_모두_연결되어_있다(self):
         self.assertEqual(
             set(_lib.ROUTES),
             {
@@ -82,6 +98,7 @@ class RoutingTest(unittest.TestCase):
                 "/api/unit",
                 "/api/pblanc",
                 "/api/cache",
+                "/api/visits",
             },
         )
 
