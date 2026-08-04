@@ -67,6 +67,12 @@ class RoutingTest(unittest.TestCase):
             self.assertEqual(response.headers.get_content_type(), "text/javascript")
             self.assertIn("selectUnitJobs", response.read().decode("utf-8"))
 
+    def test_visits_module을_javascript로_준다(self):
+        url = f"http://127.0.0.1:{self.port}/visits.mjs"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            self.assertEqual(response.headers.get_content_type(), "text/javascript")
+            self.assertIn("applyVisits", response.read().decode("utf-8"))
+
     def test_없는_경로는_404다(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
             self.get("/api/nope")
