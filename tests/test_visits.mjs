@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  LAST_VISIT_KEY, applyVisits, formatVisits, readLastDate, saveLastDate,
+  LAST_VISIT_KEY, applyVisits, formatVisits, openStorage, readLastDate, saveLastDate,
 } from "../public/visits.mjs";
 
 const indexHtml = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
@@ -78,4 +78,19 @@ test("footer 에 감춰진 방문자 span 이 있다", () => {
 test("방문자 모듈을 불러와 페이지 로드 때 부른다", () => {
   assert.match(indexHtml, /from "\/visits\.mjs"/);
   assert.match(indexHtml, /\/api\/visits\?/);
+});
+
+test("저장소 접근이 막히면 null 을 돌려준다", () => {
+  const blocked = { get localStorage() { throw new Error("SecurityError"); } };
+  assert.equal(openStorage(blocked), null);
+});
+
+test("저장소가 없으면 읽기는 빈 문자열, 쓰기는 false 다", () => {
+  assert.equal(readLastDate(null), "");
+  assert.equal(saveLastDate(null, "2026-08-04"), false);
+});
+
+test("정상 창에서는 localStorage 를 그대로 돌려준다", () => {
+  const storage = { getItem: () => null, setItem: () => {} };
+  assert.equal(openStorage({ localStorage: storage }), storage);
 });

@@ -60,7 +60,7 @@ class KstDateTest(unittest.TestCase):
     def test_날짜키는_KST_날짜로_만든다(self):
         self.assertEqual(_cache.visit_day_key("2026-08-04"), "visits:day:2026-08-04")
 
-    def test_형식이_어긋난_날짜는_거부한다(self):
+    def test_길이가_어긋난_날짜는_거부한다(self):
         with self.assertRaises(ValueError):
             _cache.visit_day_key("2026-08-04T00:00:00")
 

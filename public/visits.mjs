@@ -1,5 +1,15 @@
 export const LAST_VISIT_KEY = "visits:last";
 
+// 저장소가 차단된 환경에서는 window.localStorage 접근 자체가 던진다.
+// getItem 이 아니라 여기가 첫 관문이라, 안쪽 try 만으로는 늦는다.
+export function openStorage(win) {
+  try {
+    return win?.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // 사생활 보호 모드나 저장소 차단 설정에서는 접근 자체가 예외를 던진다.
 // 그때는 매번 새 방문으로 세어질 뿐, 카운터는 계속 동작해야 한다.
 export function readLastDate(storage) {
@@ -11,9 +21,9 @@ export function readLastDate(storage) {
 }
 
 export function saveLastDate(storage, date) {
-  if (typeof date !== "string" || !date) return false;
+  if (!storage || typeof date !== "string" || !date) return false;
   try {
-    storage?.setItem(LAST_VISIT_KEY, date);
+    storage.setItem(LAST_VISIT_KEY, date);
     return true;
   } catch {
     return false;

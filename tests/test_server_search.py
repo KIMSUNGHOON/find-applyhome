@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 import sys
 import threading
 import unittest
@@ -72,6 +73,15 @@ class RoutingTest(unittest.TestCase):
         with urllib.request.urlopen(url, timeout=5) as response:
             self.assertEqual(response.headers.get_content_type(), "text/javascript")
             self.assertIn("applyVisits", response.read().decode("utf-8"))
+
+    def test_index가_import하는_모듈이_모두_서빙된다(self):
+        html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+        modules = set(re.findall(r'from "(/[^"]+\.mjs)"', html))
+        self.assertTrue(modules)
+        for path in modules:
+            with self.subTest(path=path):
+                status, _ = self.get(path)
+                self.assertEqual(status, 200)
 
     def test_없는_경로는_404다(self):
         with self.assertRaises(urllib.error.HTTPError) as caught:
